@@ -4,6 +4,43 @@
 
 ---
 
+- **Ver.0.83** (2026-11-24):
+  - **トップ画面ボタンの絵文字を削除 ＆ バージョン更新 (`index.html`, `js/data.js`, `README.md`)**:
+    - タイトル画面の「発車する（ゲーム開始）」「南武線 各駅情報」ボタンから絵文字（`🚃` / `📊`）を削除。
+
+- **Ver.0.82b** (2026-11-24):
+  - **演出・UI表示・レスポンシブ・サウンド・スクリーンショット周りの不具合5項目を修正 (`js/app.js`, `js/ui.js`, `js/scenery.js`, `js/sound.js`, `styles.css`, `index.html`, `js/data.js`, `README.md`)**:
+    - **早送り到着時のタイマー固着＆駅停車時の鉄橋車窓を修正 (`js/app.js`, `js/scenery.js`)**：`triggerArrival()` の早送り計算直後に `timeRemaining = 0`・`UI.updateTimerUI()` を反映し、`getStationSceneryMode()` により南多摩・府中本町等の駅ホーム停車時に川の上で停車しないよう車窓を同期。
+    - **タイマー文字クラスのJS上書きバグを修正 (`js/ui.js`)**：`updateTimerUI()` のクラスを拡大タイマー準拠の `w-14 text-sm sm:text-base` へ統一。
+    - **スマホ幅での26駅ヒートマップ潰れを修正 (`index.html`, `js/ui.js`)**：`#res-od-heatmap` を `overflow-x-auto custom-scroll` に変更し、12列以上のテーブルに最低列幅 `min-width` と発駅ラベル列の `sticky left-0 z-10` を適用。
+    - **演出中スクショ競合防止・フォールバック通知・ミュート即時消音 (`js/app.js`, `js/sound.js`)**：`pausableSleep()` / `waitIfPaused()` が `capturingScreenshot` 中も待機して終了時に `flushPauseWaiters()` で復帰するよう改善し、簡易フォールバック時は専用トースト文言を表示。`SoundEngine` に `masterGain` の即時制御（`setMuted` / `muted` setter）を導入して予約済み効果音も即時消音。
+    - **UI表示・通知・データ表の仕上げ (`styles.css`, `js/ui.js`, `js/app.js`)**：ベビーカー選択・ドラッグ時の上段 `z-index`（`22` / `32`）補強、ドア前地蔵ヘッダーの左余白確保、複数追加難易度自動OFF時のまとめ通知＆トースト横幅制限、`buildDataTable()` への `doorJizo` 併用時 `peakTarget` 同期を実装。
+
+- **Ver.0.82a** (2026-11-24):
+  - **操作・入力系およびゲーム進行・スコア計算系の不具合6項目を修正 (`js/app.js`, `js/puzzle.js`, `index.html`, `js/data.js`, `README.md`)**:
+    - **ベビーカーのドラッグ追従精度を修正 (`js/app.js`)**：`pointermove` の `while` ループ内で毎ステップ上段座標 `top` を取得し、2セル領域（`top.r`〜`top.r+1`, `top.c`）基準の差分計算と `dr === 0 && dc === 0` 終了により2マス飛び越し・斜め暴発を解消。
+    - **マルチタッチ競合・ポインタ捕捉リーク防止 (`js/app.js`)**：`pointerdown` でドラッグ中の追加ポインタを無視し、`pointermove` / `endDrag` でも `activePointerId` を厳密照合するよう修正。
+    - **選択中ベビーカーからの直接ドラッグ開始に対応 (`js/app.js`)**：同一ベビーカー押下時は即解除せずドラッグ開始フローへ進め、動かさずに離した場合のみ選択トグル解除するよう改善。
+    - **ベビーカー／御老人減点の実行タイミング修正 (`js/app.js`)**：降車スコアおよび座席ボーナス加算後へ移動し、1駅目での0pt免除および早送り逆転現象を解消。
+    - **降車・乗車演出中ポーズ時のアニメーションDOM保持＆Escapeキー統一 (`js/app.js`)**：`btnPause` 内の `UI.renderGrid()` を `RUNNING` 時のみに限定し、`Escape` キーでも `RUNNING` / `ALIGHTING` / `BOARDING` でポーズできるよう統一。
+    - **早送り遅延回復しきい値＆座席ボーナス整合 (`js/puzzle.js`)**：`calcFastForwardRecovery()` で残り1.5秒以上なら最低1秒回復するよう整合し、`countSeatedPassengers()` からベビーカーを除外。
+
+- **Ver.0.82** (2026-11-24):
+  - **上り追加列車「稲城長沼発 川崎行」を追加 ＆ トップ画面サブコピーを更新 (`index.html`, `js/data.js`, `js/puzzle.js`, `README.md`)**:
+    - 上り電車の「他の行き先を見る」および「南武線 各駅情報」モーダルへ **稲城長沼発 川崎行**（18駅・各駅停車、`inagi_naganuma`）を追加（全15列車：下り6種・上り9種）。
+    - トップ画面のサブコピーを「走行中に車内を並び替え、定時運転を目指せ！」へ変更。
+
+- **Ver.0.81** (2026-11-24):
+  - **ゲーム画面のタイマー視認性向上＆アナウンス・下部操作バーの密着レイアウト改修 (`index.html`, `js/ui.js`, `js/app.js`, `js/data.js`, `README.md`)**:
+    - 走行タイマーゲージの縦幅を2倍（`h-2.5 → h-5`）へ拡大し、秒数表示も視認性を向上。
+    - 車内アナウンス電光掲示板（`次は／まもなく～～`＋スクショボタン）をドア＆ホームの直下へ移設。
+    - 最下部に離れていたコントロールバー（次駅降車カウンター・到着へ早送りボタン・注意書き）をアナウンス直下へ持ち上げ、PC・スマホ双方で1画面内に収まるよう `UI.syncCarLayout()` と `ResizeObserver` を連動調整。
+
+- **Ver.0.80a** (2026-11-24):
+  - **スマホ縦長画面における盤面上下のグレー余白を詰め、余剰スペースを最下部へ配置 (`index.html`, `js/ui.js`, `js/data.js`, `README.md`)**:
+    - `#car-body`・`#grid-stage` の `flex-1` 縦引き伸ばしを解除し、`UI.syncCarLayout()` で盤面（8:5）の実高さを算出して密着配置。
+    - `#main-stage` を `justify-start` に変更し、車窓・盤面・両開きドア＆ホームを一体で詰めて余剰スペースをホーム最下部へ逃がすレイアウトへ改善。
+
 - **Ver.0.80** (2026-11-24):
   - **GitHub公開準備：トップ画面最下部右下に「このゲームについて」モーダルを追加 (`index.html`, `js/ui.js`, `js/app.js`, `js/data.js`, `README.md`)**:
     - タイトル画面最下部の注意書き右側に小さく「このゲームについて」リンクボタンを配置。

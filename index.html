@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <title>なぜ南武線は常に混んでるのか Ver.0.80 | NANBU LINE PUZZLE</title>
+  <title>なぜ南武線は常に混んでるのか Ver.0.83 | NANBU LINE PUZZLE</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script defer src="https://cdn.jsdelivr.net/npm/modern-screenshot@4/dist/index.js"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -85,23 +85,12 @@
           </div>
         </div>
 
-        <!-- 下段：走行タイマーバー & 拡大版車内アナウンス電光掲示板 -->
-        <div class="flex flex-col gap-1.5">
-          <div class="flex items-center gap-2">
-            <div class="flex-1 h-2.5 bg-slate-800 rounded-full overflow-hidden border border-slate-700 relative">
-              <div id="timer-bar" class="h-full bg-gradient-to-r from-yellow-400 via-amber-400 to-emerald-400 transition-all duration-100 ease-linear" style="width: 100%"></div>
-            </div>
-            <div id="timer-text" class="w-12 text-right text-xs sm:text-sm font-black text-yellow-300 tabular-nums">8.8s</div>
+        <!-- 下段：拡大版走行タイマーバー（縦幅2倍） -->
+        <div class="flex items-center gap-2">
+          <div class="flex-1 h-5 bg-slate-800 rounded-full overflow-hidden border border-slate-700 relative shadow-inner">
+            <div id="timer-bar" class="h-full bg-gradient-to-r from-yellow-400 via-amber-400 to-emerald-400 transition-all duration-100 ease-linear" style="width: 100%"></div>
           </div>
-          <div class="flex items-stretch gap-1.5">
-            <div id="announce-bar" class="flex-1 min-w-0 text-base sm:text-xl font-black text-sky-100 bg-slate-900/90 px-3 py-2 rounded-lg border border-slate-700/90 truncate flex items-center gap-2 shadow-inner">
-              <span class="shrink-0 text-yellow-400 text-lg sm:text-2xl leading-none">📢</span>
-              <span id="announce-text" class="truncate leading-snug">次は　川崎　/　Next KAWASAKI（乗換：東海道線・京浜東北線・京急線）</span>
-            </div>
-            <button type="button" id="btn-screenshot" title="現在の画面をスクリーンショット保存" class="shrink-0 px-2.5 sm:px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 active:scale-95 border border-slate-600 text-xs sm:text-sm font-bold text-slate-100 flex items-center gap-1 transition cursor-pointer">
-              <span>📸</span><span class="hidden sm:inline">スクショ</span>
-            </button>
-          </div>
+          <div id="timer-text" class="w-14 text-right text-sm sm:text-base font-black text-yellow-300 tabular-nums">8.8s</div>
         </div>
       </div>
     </header>
@@ -109,7 +98,7 @@
     <!-- =========================================================
          2. 中央：車窓風景 + 車両パズル盤面 + ドア＆ホーム
          ========================================================= -->
-    <main id="main-stage" class="flex-1 flex flex-col items-center justify-between px-2 py-1.5 sm:px-4 sm:py-2 min-h-0 bg-gradient-to-b from-slate-800 via-[#162032] to-slate-900 relative overflow-hidden">
+    <main id="main-stage" class="flex-1 flex flex-col items-center justify-start px-2 py-1.5 sm:px-4 sm:py-2 min-h-0 bg-gradient-to-b from-slate-800 via-[#162032] to-slate-900 relative overflow-hidden">
 
       <!-- 車窓風景キャンバス（多摩川鉄橋など駅間連動） -->
       <div id="scenery-wrap" class="w-full max-w-[660px] shrink-0 rounded-t-xl overflow-hidden border-2 border-slate-600 border-b-0 bg-sky-300 relative shadow-inner" style="height: clamp(40px, 7.5vh, 66px);">
@@ -124,10 +113,10 @@
         </div>
       </div>
 
-      <!-- 車両本体（パズル盤面ラッパー） -->
-      <div id="car-body" class="w-full max-w-[660px] flex-1 min-h-0 flex flex-col bg-slate-300 border-x-4 border-slate-500 px-1.5 sm:px-2.5 py-1.5 shadow-xl relative">
+      <!-- 車両本体（パズル盤面ラッパー：盤面8:5に密着し余白は最下部へ逃がす） -->
+      <div id="car-body" class="w-full max-w-[660px] shrink-0 flex flex-col items-center bg-slate-300 border-x-4 border-slate-500 px-1.5 sm:px-2.5 py-1.5 shadow-xl relative">
         <!-- グリッドコンテナ（アスペクト比8:5を維持し全セルを常に1:1正方形に固定） -->
-        <div id="grid-stage" class="flex-1 min-h-0 w-full flex items-center justify-center relative">
+        <div id="grid-stage" class="w-full flex items-center justify-center relative">
           <div id="puzzle-grid">
             <!-- 5×8 = 40セルをJSで生成 -->
           </div>
@@ -169,45 +158,54 @@
           <div class="absolute top-0 left-0 right-0 h-1 bg-yellow-400/90"></div>
         </div>
       </div>
-    </main>
 
-    <!-- =========================================================
-         3. 下部：コントロールバー（到達状況・早送り・ゾーン凡例）
-         ========================================================= -->
-    <footer class="shrink-0 bg-slate-950 border-t border-slate-800 px-2.5 py-2 sm:px-4 sm:py-2.5 flex flex-col gap-1.5 z-20">
-      <div class="flex items-center justify-between gap-2">
-        <!-- 到達プレビューカウンター -->
-        <div class="flex items-center gap-1.5 sm:gap-2 bg-slate-900 border border-slate-700/80 rounded-xl px-2.5 py-1.5">
-          <div class="text-[10px] sm:text-xs font-bold text-slate-400 leading-tight">
-            次駅降車
-            <span id="alight-total-count" class="text-white font-black ml-0.5">0</span>人
-          </div>
-          <div class="h-4 w-px bg-slate-700"></div>
-          <div class="flex items-center gap-1 text-xs font-black text-emerald-400">
-            <span class="px-1 py-0.5 rounded bg-emerald-600 text-white text-[9px]">OK</span>
-            <span id="alight-ok-count" class="tabular-nums">0</span>
-          </div>
-          <div class="flex items-center gap-1 text-xs font-black text-rose-400">
-            <span class="px-1 py-0.5 rounded bg-rose-600 text-white text-[9px]">!詰</span>
-            <span id="alight-blocked-count" class="tabular-nums">0</span>
-          </div>
+      <!-- 車内アナウンス電光掲示板（ドア直下へ配置） -->
+      <div id="announce-row" class="w-full max-w-[660px] shrink-0 mt-2 flex items-stretch gap-1.5">
+        <div id="announce-bar" class="flex-1 min-w-0 text-base sm:text-xl font-black text-sky-100 bg-slate-950/90 px-3 py-2 rounded-lg border border-slate-700/90 truncate flex items-center gap-2 shadow-inner">
+          <span class="shrink-0 text-yellow-400 text-lg sm:text-2xl leading-none">📢</span>
+          <span id="announce-text" class="truncate leading-snug">次は　川崎　/　Next KAWASAKI（乗換：東海道線・京浜東北線・京急線）</span>
         </div>
-
-        <!-- 到着へ早送りボタン -->
-        <button id="btn-fast-forward" class="game-btn flex-1 max-w-[270px] py-2 px-3 rounded-xl bg-gradient-to-r from-amber-500 to-yellow-400 hover:brightness-105 text-slate-950 font-black text-xs sm:text-sm shadow-[0_3px_0_#b45309] flex items-center justify-center gap-1.5">
-          <span>⏭ 到着へ早送り</span>
-          <span id="ff-bonus-hint" class="text-[10px] bg-slate-950/15 px-1.5 py-0.5 rounded-full font-extrabold">遅延回復</span>
+        <button type="button" id="btn-screenshot" title="現在の画面をスクリーンショット保存" class="shrink-0 px-2.5 sm:px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 active:scale-95 border border-slate-600 text-xs sm:text-sm font-bold text-slate-100 flex items-center gap-1 transition cursor-pointer">
+          <span>📸</span><span class="hidden sm:inline">スクショ</span>
         </button>
       </div>
 
-      <!-- ベビーカー・御老人乗車中のみ表示される注意書き -->
-      <div id="stroller-notice" class="hidden text-[10px] sm:text-xs font-bold text-pink-200 bg-pink-950/70 border border-pink-500/50 rounded-lg px-2.5 py-1 text-center">
-        👶 ベビーカーは薄ピンクの「優先スペース（左右下端）」に置かないと各駅で減点されます！
+      <!-- コントロールバー（到達状況・到着へ早送り・注意書きをアナウンス直下へ密着配置） -->
+      <div id="controls-panel" class="w-full max-w-[660px] shrink-0 mt-2 bg-slate-950/90 border border-slate-800 rounded-xl px-2.5 py-2 sm:px-3.5 sm:py-2.5 flex flex-col gap-1.5 shadow-lg z-20">
+        <div class="flex items-center justify-between gap-2">
+          <!-- 到達プレビューカウンター -->
+          <div class="flex items-center gap-1.5 sm:gap-2 bg-slate-900 border border-slate-700/80 rounded-xl px-2.5 py-1.5">
+            <div class="text-[10px] sm:text-xs font-bold text-slate-400 leading-tight">
+              次駅降車
+              <span id="alight-total-count" class="text-white font-black ml-0.5">0</span>人
+            </div>
+            <div class="h-4 w-px bg-slate-700"></div>
+            <div class="flex items-center gap-1 text-xs font-black text-emerald-400">
+              <span class="px-1 py-0.5 rounded bg-emerald-600 text-white text-[9px]">OK</span>
+              <span id="alight-ok-count" class="tabular-nums">0</span>
+            </div>
+            <div class="flex items-center gap-1 text-xs font-black text-rose-400">
+              <span class="px-1 py-0.5 rounded bg-rose-600 text-white text-[9px]">!詰</span>
+              <span id="alight-blocked-count" class="tabular-nums">0</span>
+            </div>
+          </div>
+
+          <!-- 到着へ早送りボタン -->
+          <button id="btn-fast-forward" class="game-btn flex-1 max-w-[270px] py-2 px-3 rounded-xl bg-gradient-to-r from-amber-500 to-yellow-400 hover:brightness-105 text-slate-950 font-black text-xs sm:text-sm shadow-[0_3px_0_#b45309] flex items-center justify-center gap-1.5">
+            <span>⏭ 到着へ早送り</span>
+            <span id="ff-bonus-hint" class="text-[10px] bg-slate-950/15 px-1.5 py-0.5 rounded-full font-extrabold">遅延回復</span>
+          </button>
+        </div>
+
+        <!-- ベビーカー・御老人乗車中のみ表示される注意書き -->
+        <div id="stroller-notice" class="hidden text-[10px] sm:text-xs font-bold text-pink-200 bg-pink-950/70 border border-pink-500/50 rounded-lg px-2.5 py-1 text-center">
+          👶 ベビーカーは薄ピンクの「優先スペース（左右下端）」に置かないと各駅で減点されます！
+        </div>
+        <div id="elderly-notice" class="hidden text-[10px] sm:text-xs font-bold text-sky-200 bg-sky-950/70 border border-sky-500/50 rounded-lg px-2.5 py-1 text-center">
+          👴 御老人は水色の「座席（最上段）」に座らせないと各駅で減点されます！
+        </div>
       </div>
-      <div id="elderly-notice" class="hidden text-[10px] sm:text-xs font-bold text-sky-200 bg-sky-950/70 border border-sky-500/50 rounded-lg px-2.5 py-1 text-center">
-        👴 御老人は水色の「座席（最上段）」に座らせないと各駅で減点されます！
-      </div>
-    </footer>
+    </main>
 
     <!-- =========================================================
          オーバーレイ①：タイトル / スタート画面
@@ -220,7 +218,7 @@
             <!-- 左：駅ナンバリング枠風のバージョンバッジ -->
             <div class="shrink-0 w-12 h-12 sm:w-14 sm:h-14 rounded-lg bg-white border-[3.5px] border-[#ffd400] flex flex-col items-center justify-center leading-none shadow-sm">
               <span class="text-[8px] sm:text-[9px] font-black text-slate-500 tracking-wider">NANBU</span>
-              <span class="ver-badge text-[10px] sm:text-xs font-black text-slate-900 mt-0.5 tabular-nums">Ver.0.80</span>
+              <span class="ver-badge text-[10px] sm:text-xs font-black text-slate-900 mt-0.5 tabular-nums">Ver.0.83</span>
             </div>
             <!-- 中央：表題＆サブコピー -->
             <div class="min-w-0 text-left flex-1">
@@ -228,7 +226,7 @@
                 なぜ南武線は常に混んでるのか
               </h2>
               <p class="text-[10px] sm:text-xs font-semibold text-slate-500 mt-0.5 leading-snug">
-                走行中に車内を並び替え、南武線の定時運転を目指そう！
+                走行中に車内を並び替え、定時運転を目指せ！
               </p>
             </div>
             <!-- 右：遊び方ボタン -->
@@ -360,6 +358,13 @@
                   </div>
                   <div class="led-text text-sm sm:text-base mt-0.5">川崎行</div>
                 </button>
+                <button type="button" data-dir="up" data-course="inagi_naganuma" class="route-opt led-dest-btn text-left px-2.5 py-2 rounded-lg transition">
+                  <div class="flex items-center justify-between gap-1">
+                    <span class="text-[10px] text-slate-300 truncate">稲城長沼発</span>
+                    <span class="text-[9px] bg-slate-700 text-slate-200 px-1 rounded font-sans font-black shrink-0">18駅</span>
+                  </div>
+                  <div class="led-text text-sm sm:text-base mt-0.5">川崎行</div>
+                </button>
                 <button type="button" data-dir="up" data-course="tachikawa_nakahara" title="終電間際の電車です" class="route-opt led-dest-btn text-left px-2.5 py-2 rounded-lg transition">
                   <div class="flex items-center justify-between gap-1">
                     <span class="text-[10px] text-slate-300 shrink-0">🌙立川発</span>
@@ -444,10 +449,10 @@
           <!-- スタート & データ確認ボタン -->
           <div class="flex flex-col sm:flex-row gap-2 pt-0.5">
             <button id="btn-start-game" class="game-btn flex-1 py-2.5 sm:py-3 px-4 rounded-xl bg-gradient-to-r from-yellow-400 to-amber-500 hover:brightness-105 text-slate-950 font-black text-sm sm:text-base shadow-[0_4px_0_#b45309]">
-              🚃 発車する（ゲーム開始）
+              発車する（ゲーム開始）
             </button>
             <button id="btn-open-data" class="game-btn py-2 sm:py-2.5 px-3.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-600 text-slate-200 font-bold text-xs">
-              📊 南武線 各駅情報
+              南武線 各駅情報
             </button>
           </div>
 
@@ -630,7 +635,7 @@
                 <span>多</span>
               </div>
             </div>
-            <div id="res-od-heatmap" class="bg-slate-950/80 border border-slate-800 rounded-xl p-1 sm:p-1.5 overflow-hidden">
+            <div id="res-od-heatmap" class="bg-slate-950/80 border border-slate-800 rounded-xl p-1 sm:p-1.5 overflow-x-auto custom-scroll">
               <!-- JSで描画 -->
             </div>
           </div>
@@ -673,6 +678,7 @@
           <button type="button" data-dir="up" data-course="nakahara" data-extra="up" class="data-train-opt px-2 py-1 rounded-lg border text-[10px] sm:text-[11px] font-bold transition border-slate-700 bg-slate-800/80 text-slate-300 hover:border-slate-500">上り 中原→川崎</button>
           <button type="button" data-dir="up" data-course="nishikunitachi" data-extra="up" class="data-train-opt px-2 py-1 rounded-lg border text-[10px] sm:text-[11px] font-bold transition border-slate-700 bg-slate-800/80 text-slate-300 hover:border-slate-500">上り 西国立→川崎(朝ラッシュ)</button>
           <button type="button" data-dir="up" data-course="mizonokuchi" data-extra="up" class="data-train-opt px-2 py-1 rounded-lg border text-[10px] sm:text-[11px] font-bold transition border-slate-700 bg-slate-800/80 text-slate-300 hover:border-slate-500">上り 武蔵溝ノ口→川崎</button>
+          <button type="button" data-dir="up" data-course="inagi_naganuma" data-extra="up" class="data-train-opt px-2 py-1 rounded-lg border text-[10px] sm:text-[11px] font-bold transition border-slate-700 bg-slate-800/80 text-slate-300 hover:border-slate-500">上り 稲城長沼→川崎</button>
           <button type="button" data-dir="up" data-course="tachikawa_nakahara" data-extra="up" class="data-train-opt px-2 py-1 rounded-lg border text-[10px] sm:text-[11px] font-bold transition border-slate-700 bg-slate-800/80 text-slate-300 hover:border-slate-500">上り 立川→中原(終電)</button>
           <button type="button" data-dir="up" data-course="rapid_noborito" data-extra="up" class="data-train-opt px-2 py-1 rounded-lg border text-[10px] sm:text-[11px] font-bold transition border-slate-700 bg-slate-800/80 text-slate-300 hover:border-slate-500">上り 登戸発 快速川崎行</button>
         </div>
@@ -805,7 +811,7 @@
         <div class="flex-1 overflow-auto custom-scroll p-4 flex flex-col gap-3 text-xs text-slate-200">
           <div class="bg-slate-950/80 border border-slate-800 rounded-xl p-3 flex flex-col gap-1.5">
             <div class="flex justify-between gap-3"><span class="text-slate-400 shrink-0">ゲーム名</span><span class="font-black text-white text-right">なぜ南武線は常に混んでるのか<br><span class="text-[10px] font-bold text-slate-400">NANBU LINE PUZZLE</span></span></div>
-            <div class="flex justify-between gap-3 border-t border-slate-800/80 pt-1.5"><span class="text-slate-400 shrink-0">バージョン</span><span class="ver-badge font-black text-yellow-300 tabular-nums">Ver.0.80</span></div>
+            <div class="flex justify-between gap-3 border-t border-slate-800/80 pt-1.5"><span class="text-slate-400 shrink-0">バージョン</span><span class="ver-badge font-black text-yellow-300 tabular-nums">Ver.0.83</span></div>
             <div class="flex justify-between gap-3 border-t border-slate-800/80 pt-1.5"><span class="text-slate-400 shrink-0">最終更新日</span><span class="font-bold text-slate-200 tabular-nums">2026年11月24日</span></div>
             <div class="flex justify-between gap-3 border-t border-slate-800/80 pt-1.5"><span class="text-slate-400 shrink-0">権利表記</span><span class="font-bold text-slate-200 text-right">Copyright (c) 2026 しーさいど</span></div>
             <div class="flex justify-between gap-3 border-t border-slate-800/80 pt-1.5"><span class="text-slate-400 shrink-0">ライセンス</span><span class="font-bold text-emerald-300">MIT License</span></div>

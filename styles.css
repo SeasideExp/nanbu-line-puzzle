@@ -298,10 +298,18 @@ body {
   z-index: 20;
 }
 
+.passenger.is-stroller-top.is-selected {
+  z-index: 22;
+}
+
 .passenger.is-dragging {
   transform: scale(1.12);
   box-shadow: 0 0 0 2px #ffffff, 0 10px 20px rgba(0, 0, 0, 0.4);
   z-index: 30;
+}
+
+.passenger.is-stroller-top.is-dragging {
+  z-index: 32;
 }
 
 /* ドア前地蔵（反転配色：ダークストーン地＋白文字＋大きめピクト） */
@@ -316,6 +324,7 @@ body {
 .passenger.is-jizo .passenger-header {
   background: #475569;
   color: #ffffff;
+  padding-left: clamp(11px, min(2.2cqw, 3.5cqh), 16px);
 }
 
 .passenger.is-jizo .passenger-body {
@@ -429,6 +438,11 @@ body {
   animation: none;
   transform: scale(1.12);
   z-index: 30;
+}
+
+.passenger.is-stroller-top.is-target.is-dragging,
+.passenger.is-stroller-top.is-target.is-selected {
+  z-index: 32;
 }
 
 /* ステータスバッジ (OK / !詰 — 案1右下シャープピル) */
