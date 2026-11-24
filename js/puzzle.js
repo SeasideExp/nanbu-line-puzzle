@@ -213,6 +213,9 @@
     } else if (courseKey === 'mizonokuchi') {
       startIdx = 9;
       endIdx = 0;
+    } else if (courseKey === 'inagi_naganuma') {
+      startIdx = 17;
+      endIdx = 0;
     } else if (courseKey === 'tachikawa_nakahara') {
       startIdx = 25;
       endIdx = 7;
@@ -285,7 +288,8 @@
   function countSeatedPassengers(grid) {
     let seatedCount = 0;
     for (let c = 1; c <= 6; c++) {
-      if (grid[0][c]) seatedCount++;
+      const p = grid[0][c];
+      if (p && !p.strollerGroupId) seatedCount++;
     }
     return seatedCount;
   }
@@ -1009,7 +1013,7 @@
 
   function calcFastForwardRecovery(delaySec, timeRemaining) {
     if (delaySec <= 0 || timeRemaining < 1.5) return 0;
-    return Math.min(3, delaySec, Math.floor(timeRemaining * 0.45));
+    return Math.min(3, delaySec, Math.max(1, Math.floor(timeRemaining * 0.45)));
   }
 
   function calcScoreMultiplier(diffKey, modifiers = {}) {

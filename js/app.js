@@ -8,7 +8,7 @@
   const { APP_VERSION, BOARD_CONFIG, STATIONS, DIRECTIONS, DIFFICULTIES, COURSES, RAPID_CONNECTIONS, G1_CONFIG, JIZO_CELLS, STROLLER_CONFIG, ELDERLY_CONFIG } = global.NanbuData;
   const { ROWS, COLS, MAX_DELAY_SEC } = BOARD_CONFIG;
   const { SoundEngine } = global.NanbuSound;
-  const { SceneryRenderer, getSceneryModeAtPos, calcTrackPosition } = global.NanbuScenery;
+  const { SceneryRenderer, getSceneryModeAtPos, getStationSceneryMode, calcTrackPosition } = global.NanbuScenery;
   const Puzzle = global.NanbuPuzzle;
   const UI = global.NanbuUI;
 
@@ -84,7 +84,7 @@
   }
 
   async function waitIfPaused(myRunId) {
-    while (state.phase === 'PAUSED' && state.runId === myRunId) {
+    while ((state.phase === 'PAUSED' || state.capturingScreenshot) && state.runId === myRunId) {
       await new Promise((resolve) => pauseWaiters.push(resolve));
     }
     return state.runId === myRunId;
@@ -94,7 +94,7 @@
     let remaining = Math.max(0, ms);
     while (remaining > 0) {
       if (state.runId !== myRunId) return false;
-      if (state.phase === 'PAUSED') {
+      if (state.phase === 'PAUSED' || state.capturingScreenshot) {
         const ok = await waitIfPaused(myRunId);
         if (!ok) return false;
         continue;
@@ -103,7 +103,7 @@
       const t0 = performance.now();
       await sleep(chunk);
       if (state.runId !== myRunId) return false;
-      if (state.phase === 'PAUSED') {
+      if (state.phase === 'PAUSED' || state.capturingScreenshot) {
         const ok = await waitIfPaused(myRunId);
         if (!ok) return false;
       } else {
@@ -223,6 +223,7 @@
     el.grid.addEventListener('pointerdown', (e) => {
       if (state.capturingScreenshot) return;
       if (state.phase !== 'RUNNING') return;
+      if (state.dragging || state.activePointerId !== null) return;
       sound.init();
 
       const pos = getGridCoordsFromPoint(e.clientX, e.clientY);
@@ -237,26 +238,23 @@
         const selP = state.grid[selR][selC];
 
         if (selP && selP.strollerGroupId) {
-          // 同一ベビーカーの上下セル同士をタップした場合は誤移動させず選択解除のみ行う
-          if (p && p.strollerGroupId === selP.strollerGroupId) {
-            state.selectedCell = null;
-            UI.renderGrid(el, state);
-            return;
-          }
-          const top = Puzzle.findStrollerTop(state.grid, selR, selC);
-          if (top) {
-            const distTop = Math.abs(top.r - pos.r) + Math.abs(top.c - pos.c);
-            const distBot = Math.abs(top.r + 1 - pos.r) + Math.abs(top.c - pos.c);
-            if (distTop === 1 || distBot === 1) {
-              const anchorR = distTop === 1 ? top.r : top.r + 1;
-              const dr = pos.r - anchorR;
-              const dc = pos.c - top.c;
-              state.selectedCell = null;
-              const moved = attemptStepMove(top.r, top.c, dr, dc);
-              if (!moved.moved) {
-                UI.renderGrid(el, state);
+          // 同一ベビーカー上のセルを押した場合は即解除せず、そのままドラッグ開始フローへ進む
+          if (!(p && p.strollerGroupId === selP.strollerGroupId)) {
+            const top = Puzzle.findStrollerTop(state.grid, selR, selC);
+            if (top) {
+              const distTop = Math.abs(top.r - pos.r) + Math.abs(top.c - pos.c);
+              const distBot = Math.abs(top.r + 1 - pos.r) + Math.abs(top.c - pos.c);
+              if (distTop === 1 || distBot === 1) {
+                const anchorR = distTop === 1 ? top.r : top.r + 1;
+                const dr = pos.r - anchorR;
+                const dc = pos.c - top.c;
+                state.selectedCell = null;
+                const moved = attemptStepMove(top.r, top.c, dr, dc);
+                if (!moved.moved) {
+                  UI.renderGrid(el, state);
+                }
+                return;
               }
-              return;
             }
           }
         } else {
@@ -276,11 +274,11 @@
       }
 
       if (p && !p.isJizo) {
+        state.activePointerId = e.pointerId;
         try {
           el.grid.setPointerCapture(e.pointerId);
-          state.activePointerId = e.pointerId;
         } catch (_) {
-          state.activePointerId = null;
+          // PointerCapture 非対応環境でも pointerId 照合は維持
         }
         state.dragging = true;
         state.dragCell = { r: pos.r, c: pos.c };
@@ -295,25 +293,33 @@
     el.grid.addEventListener('pointermove', (e) => {
       if (state.capturingScreenshot) return;
       if (!state.dragging || !state.dragCell || state.phase !== 'RUNNING') return;
+      if (state.activePointerId !== null && e.pointerId !== state.activePointerId) return;
 
       const pos = getGridCoordsFromPoint(e.clientX, e.clientY, true);
       if (!pos) return;
-      if (pos.r === state.dragCell.r && pos.c === state.dragCell.c) return;
 
-      // ドラッグ対象がベビーカーの場合、同じベビーカーのもう片方のセル上にポインタがある間は誤移動させない
-      const dragP = state.grid[state.dragCell.r][state.dragCell.c];
-      const hoverP = state.grid[pos.r][pos.c];
-      if (dragP && hoverP && dragP.strollerGroupId && dragP.strollerGroupId === hoverP.strollerGroupId) {
-        return;
-      }
-
-      // 素早いドラッグでも1歩ずつ隣接スワップして追従させる（優先軸が塞がれていれば他軸へフォールバック）
+      // 素早いドラッグでも1歩ずつ隣接スワップして追従させる（ベビーカーは2セル領域基準で差分算出）
       let guard = 0;
-      while ((pos.r !== state.dragCell.r || pos.c !== state.dragCell.c) && guard < 6) {
+      while (guard < 6) {
         guard++;
         const prevR = state.dragCell.r;
-        const dr = pos.r - state.dragCell.r;
-        const dc = pos.c - state.dragCell.c;
+        const dragP = state.grid[state.dragCell.r][state.dragCell.c];
+        if (!dragP) break;
+
+        let dr = 0;
+        let dc = 0;
+        if (dragP.strollerGroupId) {
+          const top = Puzzle.findStrollerTop(state.grid, state.dragCell.r, state.dragCell.c);
+          if (!top) break;
+          dr = pos.r < top.r ? pos.r - top.r : (pos.r > top.r + 1 ? pos.r - (top.r + 1) : 0);
+          dc = pos.c - top.c;
+        } else {
+          dr = pos.r - state.dragCell.r;
+          dc = pos.c - state.dragCell.c;
+        }
+
+        if (dr === 0 && dc === 0) break;
+
         let stepR = 0;
         let stepC = 0;
         let fbR = 0;
@@ -339,14 +345,15 @@
         state.dragDidSwap = true;
         state.selectedCell = null;
 
-        // ベビーカー縦すり抜け（2マス移動）でポインタ位置を飛び越えた場合は、往復振動しないようここで終了
-        if (Math.abs(moved.newR - prevR) >= 2) {
+        // 通常客のベビーカー縦すり抜け（2マス移動）でポインタ位置を飛び越えた場合は、往復振動しないようここで終了
+        if (!dragP.strollerGroupId && Math.abs(moved.newR - prevR) >= 2) {
           break;
         }
       }
     });
 
-    const endDrag = () => {
+    const endDrag = (e) => {
+      if (state.activePointerId !== null && e && e.pointerId !== state.activePointerId) return;
       releaseActivePointerCapture();
       if (!state.dragging) return;
       const currentCell = state.dragCell;
@@ -356,8 +363,14 @@
       state.dragCell = null;
 
       if (!didSwap && currentCell) {
-        // ドラッグせずに離した → タップ選択のトグル
-        if (state.selectedCell && state.selectedCell.r === currentCell.r && state.selectedCell.c === currentCell.c) {
+        // ドラッグせずに離した → タップ選択のトグル（同一セルまたは同一ベビーカーなら選択解除）
+        const sel = state.selectedCell;
+        const selP = sel ? state.grid[sel.r][sel.c] : null;
+        const curP = state.grid[currentCell.r][currentCell.c];
+        const isSameCell = sel && sel.r === currentCell.r && sel.c === currentCell.c;
+        const isSameStroller =
+          selP && curP && selP.strollerGroupId && selP.strollerGroupId === curP.strollerGroupId;
+        if (isSameCell || isSameStroller) {
           state.selectedCell = null;
         } else {
           state.selectedCell = { r: currentCell.r, c: currentCell.c };
@@ -507,7 +520,7 @@
 
     const isNightCourse = Boolean(COURSES[state.courseKey] && COURSES[state.courseKey].isNight);
     scenery.setNight(isNightCourse);
-    scenery.setMode(false, getSceneryModeAtPos(state.startStationIdx, state.step));
+    scenery.setMode(false, getStationSceneryMode(state.startStationIdx, state.step));
     UI.syncCarLayout(el);
     scenery.resize();
 
@@ -689,12 +702,16 @@
       }
     }
 
+    // 早送り到着時も含め、停車時点でタイマー表示を 0.0s へ確定させる
+    state.timeRemaining = 0;
+    UI.updateTimerUI(el, state);
+
     const arrivalStopPos = Math.min(state.currentStopPos + 1, state.routeStops.length - 1);
     const arrivalIdx = state.routeStops[arrivalStopPos];
     const arrivalSt = STATIONS[arrivalIdx];
 
-    // 停車＆ドア開アニメーション
-    scenery.setMode(false);
+    // 停車＆ドア開アニメーション（駅ホームに合わせた車窓へ同期し、鉄橋上での停車を防止）
+    scenery.setMode(false, getStationSceneryMode(arrivalIdx, state.step));
     setPhaseBadge('停車中', 'bg-emerald-400');
     el.announceText.textContent = UI.formatArrivalAnnounce(arrivalSt, state);
 
@@ -719,38 +736,6 @@
         );
         if (!bannerDone) return;
       }
-    }
-
-    // ⓪ ベビーカー優先スペース判定 ＆ 御老人座席判定（降車駅以外の対象者が所定スペース外にある場合は減点）
-    const activeStrollers = Puzzle.getActiveStrollers(state.grid);
-    const misplacedStrollers = activeStrollers.filter((s) => !s.inPriority && s.destIdx !== arrivalIdx);
-    const activeElderly = Puzzle.getActiveElderly(state.grid);
-    const standingElderly = activeElderly.filter((e) => !e.inSeat && e.destIdx !== arrivalIdx);
-
-    if (misplacedStrollers.length > 0 || standingElderly.length > 0) {
-      if (misplacedStrollers.length > 0) {
-        const pen = STROLLER_CONFIG.penaltyPerStation;
-        for (const s of misplacedStrollers) {
-          const actualPen = Math.min(state.score, pen);
-          state.score -= actualPen;
-          state.scoreBreakdown.strollerPenalty += actualPen;
-          const msg = actualPen > 0 ? `👶優先外 -${actualPen}pt` : '👶優先外!';
-          UI.spawnFloatText(el, msg, s.topR, s.topC, 'text-pink-300', 'text-xs sm:text-sm');
-        }
-      }
-      if (standingElderly.length > 0) {
-        const pen = ELDERLY_CONFIG.penaltyPerStation;
-        for (const e of standingElderly) {
-          const actualPen = Math.min(state.score, pen);
-          state.score -= actualPen;
-          state.scoreBreakdown.elderlyPenalty += actualPen;
-          const msg = actualPen > 0 ? `👴席外 -${actualPen}pt` : '👴席外!';
-          UI.spawnFloatText(el, msg, e.r, e.c, 'text-sky-300', 'text-xs sm:text-sm');
-        }
-      }
-      sound.playDelayAlert();
-      UI.updateHUD(el, state);
-      if (!(await pausableSleep(220, myRunId))) return;
     }
 
     // 降車客を「OK（ドア近い順）」と「!詰」に仕分け（ベビーカーは上下2マスを1ユニットに統合済み）
@@ -853,6 +838,38 @@
       const seatPts = seatedCount * 20;
       state.score += seatPts;
       state.scoreBreakdown.seatBonus += seatPts;
+    }
+
+    // ベビーカー優先スペース判定 ＆ 御老人座席判定（降車・座席ボーナス加算後に残存対象者を判定）
+    const activeStrollers = Puzzle.getActiveStrollers(state.grid);
+    const misplacedStrollers = activeStrollers.filter((s) => !s.inPriority);
+    const activeElderly = Puzzle.getActiveElderly(state.grid);
+    const standingElderly = activeElderly.filter((e) => !e.inSeat);
+
+    if (misplacedStrollers.length > 0 || standingElderly.length > 0) {
+      if (misplacedStrollers.length > 0) {
+        const pen = STROLLER_CONFIG.penaltyPerStation;
+        for (const s of misplacedStrollers) {
+          const actualPen = Math.min(state.score, pen);
+          state.score -= actualPen;
+          state.scoreBreakdown.strollerPenalty += actualPen;
+          const msg = actualPen > 0 ? `👶優先外 -${actualPen}pt` : '👶優先外!';
+          UI.spawnFloatText(el, msg, s.topR, s.topC, 'text-pink-300', 'text-xs sm:text-sm');
+        }
+      }
+      if (standingElderly.length > 0) {
+        const pen = ELDERLY_CONFIG.penaltyPerStation;
+        for (const e of standingElderly) {
+          const actualPen = Math.min(state.score, pen);
+          state.score -= actualPen;
+          state.scoreBreakdown.elderlyPenalty += actualPen;
+          const msg = actualPen > 0 ? `👴席外 -${actualPen}pt` : '👴席外!';
+          UI.spawnFloatText(el, msg, e.r, e.c, 'text-sky-300', 'text-xs sm:text-sm');
+        }
+      }
+      sound.playDelayAlert();
+      UI.updateHUD(el, state);
+      if (!(await pausableSleep(220, myRunId))) return;
     }
 
     UI.updateHUD(el, state);
@@ -1005,12 +1022,12 @@
       el.screenshotToast.textContent = msg;
       el.screenshotToast.className =
         variant === 'warning'
-          ? 'absolute top-14 right-3 z-[95] px-3 py-2 rounded-lg bg-slate-950/95 border-2 border-rose-500 text-rose-200 text-xs font-black shadow-xl pointer-events-none'
-          : 'absolute top-14 right-3 z-[95] px-3 py-1.5 rounded-lg bg-slate-950/95 border border-emerald-400/70 text-emerald-300 text-xs font-black shadow-xl pointer-events-none';
+          ? 'absolute top-14 right-3 z-[95] max-w-[calc(100%-1.5rem)] px-3 py-2 rounded-lg bg-slate-950/95 border-2 border-rose-500 text-rose-200 text-xs font-black shadow-xl pointer-events-none break-words'
+          : 'absolute top-14 right-3 z-[95] max-w-[calc(100%-1.5rem)] px-3 py-1.5 rounded-lg bg-slate-950/95 border border-emerald-400/70 text-emerald-300 text-xs font-black shadow-xl pointer-events-none break-words';
       if (toastTimer) clearTimeout(toastTimer);
       toastTimer = setTimeout(() => {
         el.screenshotToast.classList.add('hidden');
-      }, variant === 'warning' ? 2500 : 2200);
+      }, variant === 'warning' ? 2800 : 2200);
     };
 
     const refreshModifierButtons = () => {
@@ -1044,21 +1061,27 @@
           b.classList.toggle('is-active', b === btn);
         });
 
-        // 選択した列車と組み合わせ不可の追加難易度がONだった場合は自動OFFにして通知
-        let blockedMsg = null;
+        // 選択した列車と組み合わせ不可の追加難易度がONだった場合は自動OFFにしてまとめて通知
+        const modLabels = { g1Event: 'G1開催', stroller: 'ベビーカー', elderly: '御老人' };
+        const disabledMods = [];
         ['g1Event', 'stroller', 'elderly'].forEach((modKey) => {
           if (state[modKey]) {
             const msg = getModifierBlockMessage(modKey, state.courseKey);
             if (msg) {
               state[modKey] = false;
-              blockedMsg = msg;
+              disabledMods.push({ key: modKey, label: modLabels[modKey] || modKey, msg });
             }
           }
         });
         refreshModifierButtons();
-        if (blockedMsg) {
+        if (disabledMods.length > 0) {
           sound.playDelayAlert();
-          showToast(`⚠️ ${blockedMsg}`, 'warning');
+          if (disabledMods.length === 1) {
+            showToast(`⚠️ ${disabledMods[0].msg}（${disabledMods[0].label}をOFF）`, 'warning');
+          } else {
+            const names = disabledMods.map((d) => d.label).join('・');
+            showToast(`⚠️ この列車では選択不可のため「${names}」をOFFにしました`, 'warning');
+          }
         }
       });
     });
@@ -1173,7 +1196,9 @@
         state.dragCell = null;
         releaseActivePointerCapture();
         scenery.setMode(false);
-        UI.renderGrid(el, state);
+        if (state.prevPhaseBeforePause === 'RUNNING') {
+          UI.renderGrid(el, state);
+        }
         el.modalPause.classList.remove('hidden');
       }
     });
@@ -1215,9 +1240,9 @@
     el.btnResultTitle.addEventListener('click', backToTitle);
     el.btnResultRetry.addEventListener('click', startGame);
 
-    // データ表モーダル（現在選択中の方向・種別・G1設定で動的描画＋モーダル内での列車切替対応）
+    // データ表モーダル（現在選択中の方向・種別・G1/ドア前地蔵設定で動的描画＋モーダル内での列車切替対応）
     const openData = () => {
-      UI.buildDataTable(el, state.direction, state.odMode, state.courseKey, state.g1Event);
+      UI.buildDataTable(el, state.direction, state.odMode, state.courseKey, state.g1Event, state.doorJizo);
       el.modalData.classList.remove('hidden');
     };
     el.btnOpenData.addEventListener('click', openData);
@@ -1226,7 +1251,7 @@
 
     document.querySelectorAll('.data-train-opt').forEach((btn) => {
       btn.addEventListener('click', () => {
-        UI.buildDataTable(el, btn.dataset.dir, state.odMode, btn.dataset.course, state.g1Event);
+        UI.buildDataTable(el, btn.dataset.dir, state.odMode, btn.dataset.course, state.g1Event, state.doorJizo);
       });
     });
 
@@ -1364,9 +1389,11 @@
           }
         }
 
+        let usedFallback = false;
         if (dataUrl) {
           triggerDownloadDataUrl(dataUrl, filename);
         } else {
+          usedFallback = true;
           triggerDownloadDataUrl(buildFallbackCanvas(kind), filename);
         }
 
@@ -1375,14 +1402,18 @@
           el.screenshotFlash.classList.remove('hidden');
           setTimeout(() => el.screenshotFlash.classList.add('hidden'), 130);
         }
-        showToast('📸 スクリーンショットを保存しました', 'success');
+        showToast(
+          usedFallback ? '📸 簡易版スクリーンショットを保存しました' : '📸 スクリーンショットを保存しました',
+          'success'
+        );
       } catch (err) {
         triggerDownloadDataUrl(buildFallbackCanvas(kind), filename);
-        showToast('📸 スクリーンショットを保存しました', 'success');
+        showToast('📸 簡易版スクリーンショットを保存しました', 'success');
       } finally {
         restoreFns.reverse().forEach((fn) => fn());
         state.capturingScreenshot = false;
         lastFrameTime = performance.now();
+        flushPauseWaiters();
       }
     };
 
@@ -1436,7 +1467,11 @@
         }
       }
       if (state.capturingScreenshot) return;
-      if (state.phase === 'RUNNING') {
+      if (
+        state.phase === 'RUNNING' ||
+        state.phase === 'ALIGHTING' ||
+        state.phase === 'BOARDING'
+      ) {
         el.btnPause.click();
       } else if (state.phase === 'PAUSED') {
         el.btnResume.click();
@@ -1472,6 +1507,8 @@
     if (typeof global.ResizeObserver === 'function' && el.mainStage) {
       const ro = new global.ResizeObserver(handleLayoutResize);
       ro.observe(el.mainStage);
+      if (el.controlsPanel) ro.observe(el.controlsPanel);
+      if (el.announceRow) ro.observe(el.announceRow);
     }
 
     lastFrameTime = performance.now();

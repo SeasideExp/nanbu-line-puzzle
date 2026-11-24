@@ -8,20 +8,39 @@
   class SoundEngine {
     constructor() {
       this.ctx = null;
+      this.masterGain = null;
       this.masterOut = null;
-      this.muted = false;
+      this._muted = false;
       this.lastSwapTime = -1;
     }
 
+    get muted() {
+      return this._muted;
+    }
+
+    set muted(flag) {
+      this.setMuted(flag);
+    }
+
+    setMuted(flag) {
+      this._muted = !!flag;
+      if (this.ctx && this.masterGain) {
+        const now = this.ctx.currentTime;
+        this.masterGain.gain.cancelScheduledValues(now);
+        this.masterGain.gain.setValueAtTime(this._muted ? 0 : 0.9, now);
+      }
+    }
+
     init() {
-      if (this.muted) return;
+      if (this._muted) return;
       if (!this.ctx) {
         const AudioCtx = global.AudioContext || global.webkitAudioContext;
         if (AudioCtx) {
           this.ctx = new AudioCtx();
           const masterGain = this.ctx.createGain();
-          masterGain.gain.setValueAtTime(0.9, this.ctx.currentTime);
+          masterGain.gain.setValueAtTime(this._muted ? 0 : 0.9, this.ctx.currentTime);
           masterGain.connect(this.ctx.destination);
+          this.masterGain = masterGain;
           if (typeof this.ctx.createDynamicsCompressor === 'function') {
             const comp = this.ctx.createDynamicsCompressor();
             comp.threshold.setValueAtTime(-12, this.ctx.currentTime);
@@ -42,7 +61,7 @@
     }
 
     tone(freq, dur, type = 'sine', vol = 0.12, delay = 0) {
-      if (this.muted || !this.ctx) return;
+      if (this._muted || !this.ctx) return;
       const now = this.ctx.currentTime + delay;
       const osc = this.ctx.createOscillator();
       const gain = this.ctx.createGain();

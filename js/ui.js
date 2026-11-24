@@ -19,6 +19,8 @@
       carBody: document.getElementById('car-body'),
       doorsPlatformWrap: document.getElementById('doors-platform-wrap'),
       doorsContainer: document.getElementById('doors-container'),
+      announceRow: document.getElementById('announce-row'),
+      controlsPanel: document.getElementById('controls-panel'),
       sceneryCanvas: document.getElementById('scenery-canvas'),
       sceneryTag: document.getElementById('scenery-tag'),
 
@@ -411,10 +413,10 @@
 
     if (state.timeRemaining <= 3.0 && state.phase === 'RUNNING') {
       el.timerBar.className = 'h-full bg-gradient-to-r from-rose-600 to-red-400 transition-all duration-75 ease-linear';
-      el.timerText.className = 'w-12 text-right text-xs sm:text-sm font-black text-rose-400 tabular-nums animate-pulse';
+      el.timerText.className = 'w-14 text-right text-sm sm:text-base font-black text-rose-400 tabular-nums animate-pulse';
     } else {
       el.timerBar.className = 'h-full bg-gradient-to-r from-yellow-400 via-amber-400 to-emerald-400 transition-all duration-100 ease-linear';
-      el.timerText.className = 'w-12 text-right text-xs sm:text-sm font-black text-yellow-300 tabular-nums';
+      el.timerText.className = 'w-14 text-right text-sm sm:text-base font-black text-yellow-300 tabular-nums';
     }
   }
 
@@ -752,7 +754,7 @@
 
             return `
               <tr>
-                <th class="bg-slate-900 ${rowLabelCls} text-left font-black text-white border-r border-slate-700 whitespace-nowrap" title="発駅：${fSt.name}">
+                <th class="sticky left-0 z-10 bg-slate-900 ${rowLabelCls} text-left font-black text-white border-r border-slate-700 whitespace-nowrap" title="発駅：${fSt.name}">
                   <span class="inline-block w-1.5 h-1.5 rounded-full mr-0.5 align-middle" style="background:${fSt.bg}"></span>${two}
                 </th>
                 ${cells}
@@ -766,8 +768,11 @@
           .map((sum) => `<td class="px-0 ${cellTextCls} text-center font-black text-emerald-300 tabular-nums border-t border-slate-700">${sum}</td>`)
           .join('');
 
+        const minTableW = toCols.length >= 12 ? (isDense ? 34 : 46) + toCols.length * 22 + (isDense ? 24 : 28) : 0;
+        const tableStyleAttr = minTableW > 0 ? ` style="min-width: ${minTableW}px"` : '';
+
         el.resOdHeatmap.innerHTML = `
-          <table class="w-full table-fixed border-collapse text-center">
+          <table class="w-full table-fixed border-collapse text-center"${tableStyleAttr}>
             <colgroup>
               <col style="width: ${isDense ? '34px' : '46px'}" />
               ${toCols.map(() => '<col />').join('')}
@@ -775,7 +780,7 @@
             </colgroup>
             <thead>
               <tr>
-                <th class="bg-slate-900 px-1 py-0.5 text-left text-[7.5px] sm:text-[8.5px] font-bold text-slate-400 border-b border-r border-slate-700 whitespace-nowrap">発＼着</th>
+                <th class="sticky left-0 z-10 bg-slate-900 px-1 py-0.5 text-left text-[7.5px] sm:text-[8.5px] font-bold text-slate-400 border-b border-r border-slate-700 whitespace-nowrap">発＼着</th>
                 ${headerCells}
                 <th class="px-0.5 py-0.5 text-right text-[7.5px] sm:text-[8.5px] font-black text-sky-300 border-b border-l border-slate-700">計</th>
               </tr>
@@ -785,7 +790,7 @@
             </tbody>
             <tfoot>
               <tr>
-                <th class="bg-slate-900 ${rowLabelCls} text-left font-black text-emerald-300 border-t border-r border-slate-700 whitespace-nowrap">計</th>
+                <th class="sticky left-0 z-10 bg-slate-900 ${rowLabelCls} text-left font-black text-emerald-300 border-t border-r border-slate-700 whitespace-nowrap">計</th>
                 ${footerCells}
                 <td class="px-0.5 ${cellTextCls} text-right font-black text-yellow-300 tabular-nums border-t border-l border-slate-700">${totalBoarded}</td>
               </tr>
@@ -883,7 +888,7 @@
   /**
    * 選択中の運行方向・種別に応じた各駅情報テーブル（縦型の種別通停路線図列を含む）を描画する
    */
-  function buildDataTable(el, dirKey, odModeKey, courseKey = 'full', g1Event = false) {
+  function buildDataTable(el, dirKey, odModeKey, courseKey = 'full', g1Event = false, doorJizo = false) {
     const dir = DIRECTIONS[dirKey] || DIRECTIONS.down;
     const mode = OD_MODES[odModeKey] || OD_MODES.balanced;
     const isRapid = Puzzle.isRapidCourse(courseKey);
@@ -893,7 +898,12 @@
     const courseDef = global.NanbuData.COURSES && global.NanbuData.COURSES[courseKey];
     const g1Disallowed = courseKey === 'nishikunitachi' || Boolean(courseDef && courseDef.isNight);
     const g1Active = !!g1Event && !g1Disallowed && routeStops.includes(global.NanbuData.G1_CONFIG.stationIdx);
-    const stats = Puzzle.computeDirectionStats(dir.key, mode.key, isRapid, { g1Active, courseKey });
+    const jizoReserve = doorJizo ? global.NanbuData.JIZO_CELLS.length : 0;
+    const effectiveCap = MAX_CAPACITY - jizoReserve;
+    const peakTarget = g1Active
+      ? Math.min(global.NanbuData.G1_CONFIG.peakTarget, effectiveCap - 2)
+      : Math.min(BOARD_CONFIG.PEAK_TARGET, effectiveCap - 2);
+    const stats = Puzzle.computeDirectionStats(dir.key, mode.key, isRapid, { g1Active, peakTarget, courseKey });
     const routeStopSet = new Set(routeStops);
 
     // トップ画面の「他の行き先を見る」展開状態に応じて、モーダル内列車切替ボタンの表示/非表示を同期
@@ -1043,7 +1053,9 @@
     if (!el || !el.mainStage || !el.carBody || !el.gridStage) return;
     const mainStyle = global.getComputedStyle(el.mainStage);
     const mainPadX = (parseFloat(mainStyle.paddingLeft) || 0) + (parseFloat(mainStyle.paddingRight) || 0);
+    const mainPadY = (parseFloat(mainStyle.paddingTop) || 0) + (parseFloat(mainStyle.paddingBottom) || 0);
     const availMainW = Math.max(0, el.mainStage.clientWidth - mainPadX);
+    const availMainH = Math.max(0, el.mainStage.clientHeight - mainPadY);
     const maxCarW = Math.min(660, availMainW);
 
     const carStyle = global.getComputedStyle(el.carBody);
@@ -1052,15 +1064,34 @@
       (parseFloat(carStyle.borderRightWidth) || 0) +
       (parseFloat(carStyle.paddingLeft) || 0) +
       (parseFloat(carStyle.paddingRight) || 0);
+    const carChromeY =
+      (parseFloat(carStyle.borderTopWidth) || 0) +
+      (parseFloat(carStyle.borderBottomWidth) || 0) +
+      (parseFloat(carStyle.paddingTop) || 0) +
+      (parseFloat(carStyle.paddingBottom) || 0);
+
+    const getOuterHeight = (node) => {
+      if (!node) return 0;
+      const st = global.getComputedStyle(node);
+      return node.offsetHeight + (parseFloat(st.marginTop) || 0) + (parseFloat(st.marginBottom) || 0);
+    };
+
+    const sceneryH = getOuterHeight(el.sceneryWrap);
+    const doorsH = getOuterHeight(el.doorsPlatformWrap);
+    const announceH = getOuterHeight(el.announceRow);
+    const controlsH = getOuterHeight(el.controlsPanel);
 
     const availStageW = Math.max(0, maxCarW - carChromeX);
-    const availStageH = el.gridStage.clientHeight;
+    const availStageH = Math.max(0, availMainH - sceneryH - doorsH - announceH - controlsH - carChromeY);
     if (availStageW <= 0 || availStageH <= 0) return;
 
     const targetGridW = Math.min(availStageW, (availStageH * COLS) / ROWS);
+    const targetGridH = Math.round((targetGridW * ROWS) / COLS);
     const targetCarW = Math.round(targetGridW + carChromeX);
     const widthStr = `${targetCarW}px`;
 
+    el.gridStage.style.width = `${Math.round(targetGridW)}px`;
+    el.gridStage.style.height = `${targetGridH}px`;
     el.carBody.style.width = widthStr;
     if (el.sceneryWrap) el.sceneryWrap.style.width = widthStr;
     if (el.doorsPlatformWrap) el.doorsPlatformWrap.style.width = widthStr;

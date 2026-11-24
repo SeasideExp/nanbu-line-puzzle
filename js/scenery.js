@@ -31,6 +31,16 @@
   }
 
   /**
+   * 駅ホーム停車時の車窓モードを返す（南多摩・府中本町など橋梁隣接駅でも川の上で停車しないよう補正）
+   */
+  function getStationSceneryMode(stationIdx, dir = 1) {
+    if (stationIdx === 18) return 'mixed50';       // 南多摩駅ホーム
+    if (stationIdx === 19) return 'residential80'; // 府中本町駅ホーム
+    const mode = getSceneryModeAtPos(stationIdx, dir);
+    return mode === 'bridge' ? 'residential80' : mode;
+  }
+
+  /**
    * 発駅 fromIdx → 次停車駅 nextIdx の走行進捗 progress (0..1) から、
    * 駅間実距離に応じた連続駅座標 pos (0..25) を計算する（快速の通過区間も正確に対応）。
    */
@@ -518,6 +528,7 @@
   global.NanbuScenery = {
     SceneryRenderer,
     getSceneryModeAtPos,
+    getStationSceneryMode,
     calcTrackPosition,
   };
 })(window);

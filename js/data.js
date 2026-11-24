@@ -6,7 +6,7 @@
 (function (global) {
   'use strict';
 
-  const APP_VERSION = 'Ver.0.80';
+  const APP_VERSION = 'Ver.0.83';
 
   const BOARD_CONFIG = {
     ROWS: 5,
@@ -150,6 +150,7 @@
     rapid_inagi:        { label: '快速（稲城長沼行・立川連絡）', isRapid: true,  rapidInagiTransfer: true, isNight: true },
     nishikunitachi:     { label: '各駅停車（朝ラッシュ）',       isRapid: false },
     mizonokuchi:        { label: '各駅停車（武蔵溝ノ口発）',     isRapid: false },
+    inagi_naganuma:     { label: '各駅停車（稲城長沼発）',       isRapid: false },
     tachikawa_nakahara: { label: '各駅停車（終電間際）',         isRapid: false, isNight: true },
     rapid_noborito:     { label: '快速（登戸発・各停連絡）',     isRapid: true,  noboritoOriginTransfer: true, isNight: true },
   };
