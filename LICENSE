@@ -19,3 +19,12 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+---
+
+### 商標・固有名詞の扱い / Notice Regarding Trademarks and Proper Nouns
+
+本ライセンス（MIT License）の適用対象はソースコードのみであり、コード内に含まれる実在の路線名・駅名・施設名等の商標権および知的財産権を許諾するものではありません。
+第三者が本ソフトウェアを商用利用・再配布等する場合は、自身の責任においてこれらの名称等を差し替える必要があります。
+
+This license (MIT License) applies solely to the source code and does not grant any trademark or intellectual property rights to real-world railway line names, station names, facility names, or other proper nouns contained in the code. Any third party engaging in commercial use or redistribution must replace such names at their own responsibility.

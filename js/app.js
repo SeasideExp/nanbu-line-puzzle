@@ -1,5 +1,5 @@
 /**
- * なぜ南武線は常に混んでるのか - メインアプリケーションコントローラー
+ * なぜ南武線は混んでるのか？ - メインアプリケーションコントローラー
  * 状態管理、上下線・各停/快速ゲーム進行フロー、第13回実OD運行スケジュール実行、ドラッグ/タップ操作、UIイベント連携を担当する。
  */
 (function (global) {
@@ -1277,7 +1277,7 @@
       ctx.fillRect(0, 0, cv.width, 10);
       ctx.fillStyle = '#f8fafc';
       ctx.font = 'bold 26px sans-serif';
-      ctx.fillText('なぜ南武線は常に混んでるのか', 30, 56);
+      ctx.fillText('なぜ南武線は混んでるのか？', 30, 56);
       ctx.fillStyle = '#94a3b8';
       ctx.font = 'bold 16px sans-serif';
       const startSt = STATIONS[state.startStationIdx] || STATIONS[0];
