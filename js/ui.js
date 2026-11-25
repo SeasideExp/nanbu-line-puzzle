@@ -29,6 +29,10 @@
       lcdPhase: document.getElementById('lcd-phase-label'),
       lcdLedDest: document.getElementById('lcd-led-dest'),
 
+      hudDiffBadge: document.getElementById('hud-diff-badge'),
+      hudModIcons: document.getElementById('hud-mod-icons'),
+      hudDiffBadgeMobile: document.getElementById('hud-diff-badge-mobile'),
+      hudModIconsMobile: document.getElementById('hud-mod-icons-mobile'),
       hudScore: document.getElementById('hud-score'),
       hudScoreMobile: document.getElementById('hud-score-mobile'),
       hudOcc: document.getElementById('hud-occupancy'),
@@ -355,6 +359,44 @@
       el.sceneryTag.textContent = `${typeLabel}終点 ${endSt.name} 到着`;
     } else {
       el.sceneryTag.textContent = `${typeLabel}${curSt.name} → ${nextSt.name} (${leg.dist.toFixed(1)}km)${leg.isBridge ? ' 🌊多摩川鉄橋' : ''}`;
+    }
+
+    // 現在の難易度バッジ＆有効な追加設定アイコン
+    const diffStyles = {
+      turtle:   { full: '🐢 亀',      short: '🐢亀',    cls: 'border-teal-500/40 bg-teal-500/15 text-teal-300' },
+      easy:     { full: 'のんびり',   short: 'のんびり', cls: 'border-emerald-500/40 bg-emerald-500/15 text-emerald-300' },
+      normal:   { full: '標準ダイヤ', short: '標準',     cls: 'border-yellow-400/50 bg-yellow-400/15 text-yellow-300' },
+      recovery: { full: '回復運転',   short: '回復',     cls: 'border-rose-500/50 bg-rose-500/15 text-rose-300' },
+    };
+    const diffStyle = diffStyles[state.diffKey] || diffStyles.normal;
+    if (el.hudDiffBadge) {
+      el.hudDiffBadge.textContent = diffStyle.full;
+      el.hudDiffBadge.className = `text-[10px] font-black px-1.5 py-0.5 rounded border whitespace-nowrap ${diffStyle.cls}`;
+    }
+    if (el.hudDiffBadgeMobile) {
+      el.hudDiffBadgeMobile.textContent = diffStyle.full;
+      el.hudDiffBadgeMobile.className = `text-[10px] font-black px-1.5 py-0.5 rounded border whitespace-nowrap ${diffStyle.cls}`;
+    }
+
+    const activeModEntries = [];
+    if (state.doorJizo) activeModEntries.push({ icon: '🗿', name: 'ドア前地蔵' });
+    if (state.g1Active) activeModEntries.push({ icon: '🏇', name: 'G1開催' });
+    if (state.stroller) activeModEntries.push({ icon: '👶', name: 'ベビーカー' });
+    if (state.elderly)  activeModEntries.push({ icon: '👴', name: '御老人' });
+
+    const modIconsStr = activeModEntries.map((m) => m.icon).join('');
+    const modTitle = activeModEntries.length > 0
+      ? `追加難易度：${activeModEntries.map((m) => `${m.icon}${m.name}`).join(' / ')}`
+      : '';
+    if (el.hudModIcons) {
+      el.hudModIcons.textContent = modIconsStr;
+      el.hudModIcons.title = modTitle;
+      el.hudModIcons.classList.toggle('hidden', activeModEntries.length === 0);
+    }
+    if (el.hudModIconsMobile) {
+      el.hudModIconsMobile.textContent = modIconsStr;
+      el.hudModIconsMobile.title = modTitle;
+      el.hudModIconsMobile.classList.toggle('hidden', activeModEntries.length === 0);
     }
 
     // スコア＆乗車率
@@ -977,7 +1019,7 @@
         }
 
         if (stats.expBoard[idx] < 1) {
-          expText = `1.0* (${stats.expBoard[idx].toFixed(2)})${suffix}`;
+          expText = `1.0人* (${stats.expBoard[idx].toFixed(2)})${suffix}`;
         } else {
           expText = `${stats.expBoard[idx].toFixed(1)}人${suffix}`;
         }

@@ -122,8 +122,11 @@
     return state.nextStrollerGroupId++;
   }
 
-  function refreshReachability() {
-    const nextIdx = UI.getNextStopIdx(state);
+  function refreshReachability(targetIdxOverride = null) {
+    const nextIdx =
+      targetIdxOverride !== null && targetIdxOverride !== undefined
+        ? targetIdxOverride
+        : UI.getNextStopIdx(state);
     const result = Puzzle.evaluateReachability(state.grid, nextIdx);
     state.reachability = result.reachability;
     state.targetTotal = result.total;
@@ -135,21 +138,23 @@
   /* -------------------------------------------------------------------------
    * 乗客スワップ操作（ドラッグ連続スワップ＆タップ移動・ベビーカー縦2マス連動対応）
    * ------------------------------------------------------------------------- */
-  function swapCells(r1, c1, r2, c2) {
+  function swapCells(r1, c1, r2, c2, deferRender = false) {
     const tmp = state.grid[r1][c1];
     state.grid[r1][c1] = state.grid[r2][c2];
     state.grid[r2][c2] = tmp;
 
     sound.playSwap();
-    refreshReachability();
-    UI.renderGrid(el, state);
-    UI.updateHUD(el, state);
+    if (!deferRender) {
+      refreshReachability();
+      UI.renderGrid(el, state);
+      UI.updateHUD(el, state);
+    }
   }
 
   /**
    * セル (fromR, fromC) の乗客（または縦2マスベビーカー）を (dr, dc) へ1歩移動する
    */
-  function attemptStepMove(fromR, fromC, dr, dc) {
+  function attemptStepMove(fromR, fromC, dr, dc, deferRender = false) {
     const p = state.grid[fromR][fromC];
     if (!p || p.isJizo) return { moved: false };
 
@@ -159,9 +164,11 @@
       const res = Puzzle.tryMoveStroller(state.grid, top.r, top.c, dr, dc);
       if (!res.moved) return { moved: false };
       sound.playSwap();
-      refreshReachability();
-      UI.renderGrid(el, state);
-      UI.updateHUD(el, state);
+      if (!deferRender) {
+        refreshReachability();
+        UI.renderGrid(el, state);
+        UI.updateHUD(el, state);
+      }
       return { moved: true, newR: fromR + dr, newC: fromC + dc };
     }
 
@@ -179,13 +186,15 @@
       const res = Puzzle.tryMoveStroller(state.grid, top.r, top.c, -dr, 0);
       if (!res.moved) return { moved: false };
       sound.playSwap();
-      refreshReachability();
-      UI.renderGrid(el, state);
-      UI.updateHUD(el, state);
+      if (!deferRender) {
+        refreshReachability();
+        UI.renderGrid(el, state);
+        UI.updateHUD(el, state);
+      }
       return { moved: true, newR: fromR + dr * 2, newC: fromC };
     }
 
-    swapCells(fromR, fromC, nr, nc);
+    swapCells(fromR, fromC, nr, nc, deferRender);
     return { moved: true, newR: nr, newC: nc };
   }
 
@@ -223,6 +232,7 @@
     el.grid.addEventListener('pointerdown', (e) => {
       if (state.capturingScreenshot) return;
       if (state.phase !== 'RUNNING') return;
+      if (e.pointerType === 'mouse' && e.button !== 0) return;
       if (state.dragging || state.activePointerId !== null) return;
       sound.init();
 
@@ -300,6 +310,7 @@
 
       // 素早いドラッグでも1歩ずつ隣接スワップして追従させる（ベビーカーは2セル領域基準で差分算出）
       let guard = 0;
+      let didMoveAny = false;
       while (guard < 6) {
         guard++;
         const prevR = state.dragCell.r;
@@ -333,9 +344,9 @@
           if (dr !== 0) fbR = Math.sign(dr);
         }
 
-        let moved = attemptStepMove(state.dragCell.r, state.dragCell.c, stepR, stepC);
+        let moved = attemptStepMove(state.dragCell.r, state.dragCell.c, stepR, stepC, true);
         if (!moved.moved && (fbR !== 0 || fbC !== 0)) {
-          moved = attemptStepMove(state.dragCell.r, state.dragCell.c, fbR, fbC);
+          moved = attemptStepMove(state.dragCell.r, state.dragCell.c, fbR, fbC, true);
         }
         if (!moved.moved) {
           break;
@@ -344,25 +355,35 @@
         state.dragCell = { r: moved.newR, c: moved.newC };
         state.dragDidSwap = true;
         state.selectedCell = null;
+        didMoveAny = true;
 
         // 通常客のベビーカー縦すり抜け（2マス移動）でポインタ位置を飛び越えた場合は、往復振動しないようここで終了
         if (!dragP.strollerGroupId && Math.abs(moved.newR - prevR) >= 2) {
           break;
         }
       }
+
+      if (didMoveAny) {
+        refreshReachability();
+        UI.renderGrid(el, state);
+        UI.updateHUD(el, state);
+      }
     });
 
     const endDrag = (e) => {
-      if (state.activePointerId !== null && e && e.pointerId !== state.activePointerId) return;
+      if (state.activePointerId !== null && e && typeof e.pointerId === 'number' && e.pointerId !== state.activePointerId) {
+        return;
+      }
       releaseActivePointerCapture();
       if (!state.dragging) return;
       const currentCell = state.dragCell;
       const didSwap = state.dragDidSwap;
+      const isTapEnd = Boolean(e && e.type === 'pointerup');
 
       state.dragging = false;
       state.dragCell = null;
 
-      if (!didSwap && currentCell) {
+      if (isTapEnd && !didSwap && currentCell) {
         // ドラッグせずに離した → タップ選択のトグル（同一セルまたは同一ベビーカーなら選択解除）
         const sel = state.selectedCell;
         const selP = sel ? state.grid[sel.r][sel.c] : null;
@@ -381,6 +402,8 @@
 
     el.grid.addEventListener('pointerup', endDrag);
     el.grid.addEventListener('pointercancel', endDrag);
+    el.grid.addEventListener('lostpointercapture', endDrag);
+    global.addEventListener('blur', endDrag);
   }
 
   /* -------------------------------------------------------------------------
@@ -415,7 +438,7 @@
   }
 
   async function startGame() {
-    if (state.phase === 'STARTING') return;
+    if (state.phase === 'STARTING' || state.capturingScreenshot) return;
     sound.init();
     const myRunId = (state.runId || 0) + 1;
     state.runId = myRunId;
@@ -787,6 +810,8 @@
         for (const cell of unitCells) {
           state.grid[cell.r][cell.c] = null;
         }
+        refreshReachability();
+        UI.updateHUD(el, state);
       }
       if (okHeadcount >= 3) {
         const baseChain = okHeadcount * 100;
@@ -826,6 +851,8 @@
         for (const cell of unitCells) {
           state.grid[cell.r][cell.c] = null;
         }
+        refreshReachability();
+        UI.updateHUD(el, state);
       }
       if (!(await pausableSleep(280, myRunId))) return;
       UI.renderGrid(el, state);
@@ -896,6 +923,10 @@
       allocateStrollerGroupId,
     });
     recordBoardedPassengers(incoming, boardedUids);
+
+    // 乗車反映にあわせて下部「次駅降車」カウンターを次停車駅基準へ先行更新
+    const upcomingIdx = state.routeStops[Math.min(arrivalStopPos + 1, state.routeStops.length - 1)];
+    refreshReachability(upcomingIdx);
 
     if (boardedCount > 0) {
       UI.renderGrid(el, state, boardedUids);
@@ -1204,6 +1235,7 @@
     });
 
     el.btnResume.addEventListener('click', () => {
+      if (state.capturingScreenshot) return;
       el.modalPause.classList.add('hidden');
       state.phase = state.prevPhaseBeforePause;
       if (state.phase === 'RUNNING') {
@@ -1215,6 +1247,7 @@
     el.btnRestart.addEventListener('click', startGame);
 
     const backToTitle = () => {
+      if (state.capturingScreenshot) return;
       state.runId = (state.runId || 0) + 1;
       state.phase = 'TITLE';
       flushPauseWaiters();
@@ -1311,17 +1344,24 @@
 
       // 別窓詳細レポート撮影時は画面外クローンを展開して撮影（表示中の画面を一切動かさない）
       if (kind === 'report' && el.resultDetailCard) {
-        const cardWidth = el.resultDetailCard.offsetWidth;
+        let captureWidth = el.resultDetailCard.offsetWidth;
+        const liveHeatmap = el.resultDetailCard.querySelector('#res-od-heatmap');
+        if (liveHeatmap && liveHeatmap.offsetParent !== null && liveHeatmap.scrollWidth > liveHeatmap.clientWidth) {
+          const extraW = liveHeatmap.scrollWidth - liveHeatmap.clientWidth;
+          captureWidth = Math.max(captureWidth, el.resultDetailCard.offsetWidth + extraW);
+        }
+
         const host = document.createElement('div');
         host.style.position = 'fixed';
         host.style.left = '-99999px';
         host.style.top = '0';
-        host.style.width = `${cardWidth}px`;
+        host.style.width = `${captureWidth}px`;
         host.style.pointerEvents = 'none';
         host.style.zIndex = '-1';
 
         const clone = el.resultDetailCard.cloneNode(true);
-        clone.style.width = `${cardWidth}px`;
+        clone.style.width = `${captureWidth}px`;
+        clone.style.maxWidth = 'none';
         clone.style.height = 'auto';
         clone.style.maxHeight = 'none';
         clone.style.overflow = 'visible';
@@ -1332,6 +1372,10 @@
           innerScroll.style.overflow = 'visible';
           innerScroll.style.maxHeight = 'none';
           innerScroll.style.height = 'auto';
+        }
+        const cloneHeatmap = clone.querySelector('#res-od-heatmap');
+        if (cloneHeatmap) {
+          cloneHeatmap.style.overflow = 'visible';
         }
 
         host.appendChild(clone);
@@ -1441,17 +1485,22 @@
     };
 
     document.querySelectorAll('.detail-tab-btn').forEach((btn) => {
-      btn.addEventListener('click', () => setDetailTab(btn.dataset.detailTab));
+      btn.addEventListener('click', () => {
+        if (state.capturingScreenshot) return;
+        setDetailTab(btn.dataset.detailTab);
+      });
     });
 
     if (el.btnOpenResultDetail && el.modalResultDetail) {
       el.btnOpenResultDetail.addEventListener('click', () => {
+        if (state.capturingScreenshot) return;
         setDetailTab('od-list');
         el.modalResultDetail.classList.remove('hidden');
       });
     }
     if (el.btnCloseResultDetail && el.modalResultDetail) {
       el.btnCloseResultDetail.addEventListener('click', () => {
+        if (state.capturingScreenshot) return;
         el.modalResultDetail.classList.add('hidden');
       });
     }
@@ -1459,6 +1508,7 @@
     // Escape キー：サブモーダル優先で閉じ、閉じていてプレイ中（RUNNING / PAUSED）ならポーズをトグル
     global.addEventListener('keydown', (e) => {
       if (e.key !== 'Escape') return;
+      if (state.capturingScreenshot) return;
       const subModals = [el.modalAbout, el.modalModHelp, el.modalHowto, el.modalData, el.modalResultDetail];
       for (const modal of subModals) {
         if (modal && !modal.classList.contains('hidden')) {
@@ -1466,7 +1516,6 @@
           return;
         }
       }
-      if (state.capturingScreenshot) return;
       if (
         state.phase === 'RUNNING' ||
         state.phase === 'ALIGHTING' ||

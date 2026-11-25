@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <title>なぜ南武線は混んでるのか？ Ver.0.84 | NANBU LINE PUZZLE</title>
+  <title>なぜ南武線は混んでるのか？ Ver.0.86 | NANBU LINE PUZZLE</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script defer src="https://cdn.jsdelivr.net/npm/modern-screenshot@4/dist/index.js"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -48,17 +48,21 @@
             </div>
           </div>
 
-          <!-- 右：スコア・乗車数・遅延・ユーティリティボタン -->
+          <!-- 右：難易度・追加設定アイコン・スコア・乗車数・遅延・ユーティリティボタン -->
           <div class="flex items-center gap-1.5 sm:gap-2.5 shrink-0">
-            <!-- 乗車数 & スコア -->
-            <div class="hidden sm:flex flex-col items-end text-right leading-tight">
-              <div class="text-[10px] text-slate-400 font-bold">SCORE</div>
-              <div id="hud-score" class="text-sm font-black text-yellow-300 tabular-nums">0</div>
-            </div>
-            <div class="flex flex-col items-end text-right leading-tight bg-slate-900/90 px-2 py-1 rounded-lg border border-slate-700/80">
-              <div class="sm:hidden flex items-center gap-1 text-[10px] text-yellow-300 font-black tabular-nums mb-0.5">
-                <span id="hud-score-mobile">0</span><span>pt</span>
+            <!-- PC表示（sm以上）：難易度バッジ＋追加設定アイコン＋スコア -->
+            <div class="hidden sm:flex items-center gap-2">
+              <div class="flex flex-col items-end gap-0.5 leading-none">
+                <span id="hud-diff-badge" class="text-[10px] font-black px-1.5 py-0.5 rounded border border-yellow-400/50 bg-yellow-400/15 text-yellow-300 whitespace-nowrap">標準ダイヤ</span>
+                <span id="hud-mod-icons" class="hidden text-xs leading-none tracking-tight bg-slate-900/90 border border-slate-700/80 rounded px-1 py-0.5"></span>
               </div>
+              <div class="flex flex-col items-end text-right leading-tight">
+                <div class="text-[10px] text-slate-400 font-bold">SCORE</div>
+                <div id="hud-score" class="text-sm font-black text-yellow-300 tabular-nums">0</div>
+              </div>
+            </div>
+            <!-- ステータスカード（乗車数・遅延） -->
+            <div class="flex flex-col items-end text-right leading-tight bg-slate-900/90 px-2 py-1 rounded-lg border border-slate-700/80">
               <div class="flex items-center gap-1 text-[10px] text-slate-400 font-bold">
                 <span>車内</span>
                 <span id="hud-occupancy" class="text-xs font-black text-sky-300 tabular-nums">0/40</span>
@@ -82,6 +86,18 @@
                 ☰
               </button>
             </div>
+          </div>
+        </div>
+
+        <!-- スマホ表示（sm未満）：難易度・追加設定アイコン・スコアを専用1行帯へ分離しLED行先表示を圧迫しない -->
+        <div class="sm:hidden flex items-center justify-between gap-2 leading-none">
+          <div class="flex items-center gap-1 min-w-0">
+            <span id="hud-diff-badge-mobile" class="text-[10px] font-black px-1.5 py-0.5 rounded border border-yellow-400/50 bg-yellow-400/15 text-yellow-300 whitespace-nowrap">標準ダイヤ</span>
+            <span id="hud-mod-icons-mobile" class="hidden text-[11px] leading-none tracking-tight bg-slate-900/90 border border-slate-700/80 rounded px-1 py-0.5"></span>
+          </div>
+          <div class="flex items-baseline gap-1 shrink-0 tabular-nums">
+            <span class="text-[9px] text-slate-400 font-bold">SCORE</span>
+            <span class="text-xs text-yellow-300 font-black"><span id="hud-score-mobile">0</span><span class="text-[10px] ml-0.5">pt</span></span>
           </div>
         </div>
 
@@ -218,7 +234,7 @@
             <!-- 左：駅ナンバリング枠風のバージョンバッジ -->
             <div class="shrink-0 w-12 h-12 sm:w-14 sm:h-14 rounded-lg bg-white border-[3.5px] border-[#ffd400] flex flex-col items-center justify-center leading-none shadow-sm">
               <span class="text-[8px] sm:text-[9px] font-black text-slate-500 tracking-wider">NANBU</span>
-              <span class="ver-badge text-[10px] sm:text-xs font-black text-slate-900 mt-0.5 tabular-nums">Ver.0.84</span>
+              <span class="ver-badge text-[10px] sm:text-xs font-black text-slate-900 mt-0.5 tabular-nums">Ver.0.86</span>
             </div>
             <!-- 中央：表題＆サブコピー -->
             <div class="min-w-0 text-left flex-1">
@@ -811,8 +827,8 @@
         <div class="flex-1 overflow-auto custom-scroll p-4 flex flex-col gap-3 text-xs text-slate-200">
           <div class="bg-slate-950/80 border border-slate-800 rounded-xl p-3 flex flex-col gap-1.5">
             <div class="flex justify-between gap-3"><span class="text-slate-400 shrink-0">ゲーム名</span><span class="font-black text-white text-right">なぜ南武線は混んでるのか？<br><span class="text-[10px] font-bold text-slate-400">NANBU LINE PUZZLE</span></span></div>
-            <div class="flex justify-between gap-3 border-t border-slate-800/80 pt-1.5"><span class="text-slate-400 shrink-0">バージョン</span><span class="ver-badge font-black text-yellow-300 tabular-nums">Ver.0.84</span></div>
-            <div class="flex justify-between gap-3 border-t border-slate-800/80 pt-1.5"><span class="text-slate-400 shrink-0">最終更新日</span><span class="font-bold text-slate-200 tabular-nums">2026年11月24日</span></div>
+            <div class="flex justify-between gap-3 border-t border-slate-800/80 pt-1.5"><span class="text-slate-400 shrink-0">バージョン</span><span class="ver-badge font-black text-yellow-300 tabular-nums">Ver.0.86</span></div>
+            <div class="flex justify-between gap-3 border-t border-slate-800/80 pt-1.5"><span class="text-slate-400 shrink-0">最終更新日</span><span class="font-bold text-slate-200 tabular-nums">2026年11月25日</span></div>
             <div class="flex justify-between gap-3 border-t border-slate-800/80 pt-1.5"><span class="text-slate-400 shrink-0">権利表記</span><span class="font-bold text-slate-200 text-right">Copyright (c) 2026 しーさいど</span></div>
             <div class="flex justify-between gap-3 border-t border-slate-800/80 pt-1.5"><span class="text-slate-400 shrink-0">ライセンス</span><span class="font-bold text-emerald-300">MIT License</span></div>
           </div>

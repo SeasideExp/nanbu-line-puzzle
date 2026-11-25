@@ -4,6 +4,25 @@
 
 ---
 
+- **Ver.0.86** (2026-11-25):
+  - **降車・乗車演出中の下部「次駅降車」カウンターおよび車内人数表示をリアルタイム更新化 (`js/app.js`, `js/data.js`, `index.html`, `README.md`)**:
+    - 降車演出（スムーズ降車・かき分け降車）中に1組降車するたび `refreshReachability()` と `UI.updateHUD()` を実行し、下部バーの `次駅降車 / OK / !詰` カウンターおよび `車内 XX/40` が0人までリアルタイムに減算されるよう改善（終点クリア時も `0人 / OK 0 / !詰 0` へ確定）。
+    - 途中駅の乗車フェーズ（`BOARDING`）では乗客配置直後に `refreshReachability(upcomingIdx)` で次停車駅基準の降車人数・到達状況を先行反映するよう更新。
+
+- **Ver.0.85a** (2026-11-25):
+  - **ドラッグ描画・ポインタ操作ロック・車窓周期ワープ・スマホ版HUD／スクショ表示・各駅情報表記の不具合6点を修正 (`js/app.js`, `js/scenery.js`, `js/ui.js`, `index.html`, `js/data.js`, `README.md`)**:
+    - **ドラッグ中の `.is-dragging` 描画ズレを修正 (`js/app.js`)**：`attemptStepMove()` / `swapCells()` に `deferRender` オプションを追加し、`pointermove` ループ内で `state.dragCell` と `state.selectedCell` を更新し終えた後に1回だけ `refreshReachability()`・`UI.renderGrid()`・`UI.updateHUD()` を実行するよう修正。
+    - **PC右クリック・フォーカス喪失時の操作ロックを防止 (`js/app.js`)**：`pointerdown` でマウス左ボタン以外を無視するようガードし、`lostpointercapture` および `window` の `blur` でも安全にドラッグ状態を解除するよう対応（中断イベントではタップ選択トグルを発火させない）。
+    - **住宅地8割・混在5割車窓の周期チラつきを修正 (`js/scenery.js`)**：`_drawMixedLand()` から `_drawResidentialSlot()` へ渡す `seed` をループ変数 `i` から周期正規化済みの `idx` へ修正し、約5〜6秒ごとの右側民家デザイン一斉切替を解消。
+    - **スマホ幅でのヘッダー行先LED圧迫を解消 (`index.html`, `js/ui.js`)**：スマホ版（`sm` 未満）の難易度バッジ・追加設定アイコン・スコアをヘッダー上段直下の専用1行帯へ分離し、複数追加設定ON時でも行先LED表示器が潰れないよう改善。
+    - **スマホ幅ヒートマップのスクショ横見切れ＆リザルト撮影中ガードを修正 (`js/app.js`)**：詳細レポート撮影時に `#res-od-heatmap` の横スクロール超過幅を検出してクローン幅を自動拡張・`overflow: visible` 化し、あわせて `startGame()`・`backToTitle()`・`btnResume`・詳細レポート切替・`Escape` キーへ `state.capturingScreenshot` ガードを追加。
+    - **各駅情報テーブルの単位表記を統一 (`js/ui.js`)**：`buildDataTable()` で期待乗車 `< 1` の駅にも単位「`人`」を付与（`1.0人* (0.xx)`）。
+
+- **Ver.0.85** (2026-11-25):
+  - **プレイ画面への現在難易度＆追加設定アイコンHUD追加 ＆ 降車 `OK` / `!詰` バッジ視認性向上 (`index.html`, `js/ui.js`, `styles.css`, `js/data.js`, `README.md`)**:
+    - プレイ画面ヘッダー右側に現在のダイヤ難易度バッジ（色分け対応）と有効な追加難易度アイコン（`🗿` / `🏇` / `👶` / `👴`、ツールチップ付き）を表示（PC幅はフル表記＋縦並び、スマホ幅は短縮表記＋ステータスカード上段へ省スペース配置）。
+    - 降車対象パネル右下の `OK` / `!詰` ステータスバッジを盤面サイズ連動の `clamp(9.5px, min(2.2cqw, 3.2cqh), 12px)`・余白拡大・強コントラスト影付きへ改修し、視認性を大幅に向上。
+
 - **Ver.0.84** (2026-11-24):
   - **ゲーム名を「なぜ南武線は混んでるのか？」へ変更 ＆ ライセンス・商標注記を追記 (`index.html`, `js/*.js`, `styles.css`, `README.md`, `LICENSE`, `AGENTS.md`)**:
     - 画面タイトル・`<title>`・「このゲームについて」モーダル・簡易スクショ描画・各ファイル先頭コメント・ドキュメントのゲーム名を「なぜ南武線は混んでるのか？」へ統一。

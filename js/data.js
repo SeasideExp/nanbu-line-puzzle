@@ -6,7 +6,7 @@
 (function (global) {
   'use strict';
 
-  const APP_VERSION = 'Ver.0.84';
+  const APP_VERSION = 'Ver.0.86';
 
   const BOARD_CONFIG = {
     ROWS: 5,

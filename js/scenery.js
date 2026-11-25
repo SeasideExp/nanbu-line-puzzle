@@ -417,7 +417,7 @@
         if (pattern[idx] === 'bldg') {
           this._drawBuildingBlock(ctx, sx, h, step - 8, idx % 8);
         } else {
-          this._drawResidentialSlot(ctx, sx, h, step, i);
+          this._drawResidentialSlot(ctx, sx, h, step, idx);
         }
       }
 
