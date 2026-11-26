@@ -3,7 +3,15 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <title>なぜ南武線は混んでるのか？ Ver.0.86 | NANBU LINE PUZZLE</title>
+  <title>なぜ南武線は混んでるのか？ Ver.0.88 | NANBU LINE PUZZLE</title>
+  <meta name="description" content="走行中に車内を並び替え、南武線の定時運転を目指す通勤電車パズルゲーム。第13回大都市交通センサスの実データをもとに全26駅の乗降を再現！" />
+  <meta property="og:type" content="website" />
+  <meta property="og:title" content="なぜ南武線は混んでるのか？ | NANBU LINE PUZZLE" />
+  <meta property="og:description" content="走行中に車内を並び替え、定時運転を目指せ！第13回大都市交通センサスの実データで南武線全26駅の乗降を再現したブラウザパズルゲーム。" />
+  <meta property="og:url" content="https://seasideexp.github.io/nanbu-line-puzzle/" />
+  <meta name="twitter:card" content="summary" />
+  <meta name="twitter:title" content="なぜ南武線は混んでるのか？ | NANBU LINE PUZZLE" />
+  <meta name="twitter:description" content="走行中に車内を並び替え、定時運転を目指せ！南武線全26駅の乗降を再現したブラウザパズルゲーム。" />
   <script src="https://cdn.tailwindcss.com"></script>
   <script defer src="https://cdn.jsdelivr.net/npm/modern-screenshot@4/dist/index.js"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -234,7 +242,7 @@
             <!-- 左：駅ナンバリング枠風のバージョンバッジ -->
             <div class="shrink-0 w-12 h-12 sm:w-14 sm:h-14 rounded-lg bg-white border-[3.5px] border-[#ffd400] flex flex-col items-center justify-center leading-none shadow-sm">
               <span class="text-[8px] sm:text-[9px] font-black text-slate-500 tracking-wider">NANBU</span>
-              <span class="ver-badge text-[10px] sm:text-xs font-black text-slate-900 mt-0.5 tabular-nums">Ver.0.86</span>
+              <span class="ver-badge text-[10px] sm:text-xs font-black text-slate-900 mt-0.5 tabular-nums">Ver.0.88</span>
             </div>
             <!-- 中央：表題＆サブコピー -->
             <div class="min-w-0 text-left flex-1">
@@ -245,15 +253,31 @@
                 走行中に車内を並び替え、定時運転を目指せ！
               </p>
             </div>
-            <!-- 右：遊び方ボタン -->
-            <button type="button" id="btn-open-howto" class="shrink-0 px-2.5 py-1.5 sm:px-3 sm:py-2 rounded-lg bg-slate-900 hover:bg-slate-800 active:scale-95 text-white border border-slate-700 text-[11px] sm:text-xs font-black tracking-wide shadow-sm transition cursor-pointer">
-              遊び方
-            </button>
+            <!-- 右：遊び方・スコアボタン -->
+            <div class="shrink-0 flex flex-col gap-1">
+              <button type="button" id="btn-open-howto" class="px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 active:scale-95 text-white border border-slate-700 text-[11px] sm:text-xs font-black tracking-wide shadow-sm transition cursor-pointer whitespace-nowrap">
+                遊び方
+              </button>
+              <button type="button" id="btn-open-highscore" class="game-btn px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-lg bg-gradient-to-b from-amber-300 via-amber-400 to-amber-500 hover:brightness-105 text-slate-950 border border-amber-600 text-[11px] sm:text-xs font-black tracking-wide shadow-[0_2px_0_#b45309,0_3px_10px_rgba(245,158,11,0.35)] flex items-center justify-center gap-1 cursor-pointer whitespace-nowrap">
+                <span>🏆</span><span>スコア</span>
+              </button>
+            </div>
           </div>
           <!-- LCDベゼル下部の南武線3色帯 -->
           <div class="nambu-stripe h-2 w-full mt-2.5 rounded-t-sm"></div>
         </div>
-        <div class="p-3.5 sm:p-5 flex flex-col gap-3">
+        <!-- BGM再生案内 ＆ 音量設定バー -->
+        <div class="px-3.5 sm:px-5 pt-2 pb-0 flex items-center justify-between gap-2">
+          <div id="title-bgm-hint" class="hidden min-w-0">
+            <button type="button" id="btn-title-bgm-hint" class="text-[10px] text-sky-300 hover:text-sky-200 underline underline-offset-2 transition cursor-pointer truncate">
+              🎵 画面タップ（クリック）でBGM再生
+            </button>
+          </div>
+          <button type="button" id="btn-open-sound-title" class="ml-auto shrink-0 px-2 py-0.5 rounded-md bg-slate-800 hover:bg-slate-700 border border-slate-600 text-slate-200 font-bold text-[10.5px] flex items-center gap-1 transition cursor-pointer">
+            <span>🔊</span><span>音量</span>
+          </button>
+        </div>
+        <div class="p-3.5 sm:p-5 pt-2.5 sm:pt-3 flex flex-col gap-3">
 
           <!-- 運行区間選択（駅サイン風ヘッダー × 下り・上り・オプション行先展開対応） -->
           <div class="flex flex-col gap-2.5">
@@ -487,14 +511,19 @@
          オーバーレイ②：一時停止 / メニューモーダル
          ========================================================= -->
     <div id="modal-pause" class="hidden absolute inset-0 z-[58] bg-slate-950/85 backdrop-blur-sm flex items-center justify-center p-4">
-      <div class="w-full max-w-[360px] bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl overflow-hidden">
-        <div class="nambu-stripe h-2 w-full"></div>
-        <div class="p-5 flex flex-col gap-3 text-center">
+      <div class="w-full max-w-[360px] max-h-[88dvh] bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl overflow-hidden flex flex-col">
+        <div class="nambu-stripe h-2 w-full shrink-0"></div>
+        <div class="p-5 flex flex-col gap-3 text-center overflow-y-auto custom-scroll">
           <div class="flex items-center justify-between gap-2">
             <h3 class="text-base sm:text-lg font-black text-white">⏸ 運行一時停止</h3>
-            <button id="btn-pause-data" class="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-600 text-slate-200 font-bold text-[10px] sm:text-[11px] shrink-0 transition cursor-pointer">
-              📊 各駅情報
-            </button>
+            <div class="flex items-center gap-1.5 shrink-0">
+              <button type="button" id="btn-open-sound-pause" class="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-600 text-sky-200 font-bold text-[10px] sm:text-[11px] shrink-0 transition cursor-pointer">
+                🔊 音量
+              </button>
+              <button id="btn-pause-data" class="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-600 text-slate-200 font-bold text-[10px] sm:text-[11px] shrink-0 transition cursor-pointer">
+                📊 各駅情報
+              </button>
+            </div>
           </div>
           <p class="text-xs text-slate-400 text-left">操作ヒント：乗客をドラッグして隣接マスと連続入れ替えできます。次駅降車客をドア前（黄色マス）に繋げましょう。</p>
           <button id="btn-resume" class="game-btn w-full py-2.5 rounded-xl bg-yellow-400 text-slate-950 font-black text-sm shadow-[0_3px_0_#b45309]">
@@ -549,10 +578,30 @@
             </div>
           </div>
 
-          <!-- 別窓詳細レポートボタン -->
-          <button type="button" id="btn-open-result-detail" class="game-btn w-full py-2.5 px-3 rounded-xl bg-sky-600/25 hover:bg-sky-600/35 border border-sky-400/60 text-sky-200 font-black text-xs sm:text-sm flex items-center justify-center gap-1.5 transition cursor-pointer">
-            <span>📊</span><span>乗客動向・ヒートマップ・スコア詳細を見る</span>
-          </button>
+          <!-- ハイスコア更新バナー -->
+          <div id="res-record-banner" class="hidden px-3 py-1.5 rounded-xl bg-amber-500/20 border border-amber-400/70 text-amber-200 text-xs sm:text-sm font-black tracking-wide shadow-sm">
+            <!-- JSでハイスコア更新時に動的表示 -->
+          </div>
+
+          <!-- 別窓詳細レポート ＆ ハイスコア一覧ボタン -->
+          <div class="flex flex-col gap-2">
+            <button type="button" id="btn-open-result-detail" class="game-btn w-full py-2.5 px-3 rounded-xl bg-sky-600/25 hover:bg-sky-600/35 border border-sky-400/60 text-sky-200 font-black text-xs sm:text-sm flex items-center justify-center gap-1.5 transition cursor-pointer">
+              <span>📊</span><span>乗客動向・ヒートマップ・スコア詳細を見る</span>
+            </button>
+            <button type="button" id="btn-result-highscore" class="game-btn w-full py-2 px-3 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 border border-amber-400/60 text-amber-200 font-black text-xs sm:text-sm flex items-center justify-center gap-1.5 transition cursor-pointer">
+              <span>🏆</span><span>ハイスコア一覧・ランキングを見る</span>
+            </button>
+          </div>
+
+          <!-- SNSシェアボタン（結果コピー / Xポスト） -->
+          <div class="grid grid-cols-2 gap-2">
+            <button type="button" id="btn-result-share-copy" class="game-btn py-2 px-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-600 text-slate-100 font-bold text-xs flex items-center justify-center gap-1.5 transition cursor-pointer">
+              <span>📋</span><span>結果をコピー</span>
+            </button>
+            <a id="btn-result-share-x" href="https://x.com/intent/tweet" target="_blank" rel="noopener noreferrer" class="game-btn py-2 px-2.5 rounded-xl bg-slate-950 hover:bg-slate-800 border border-slate-500 text-white font-black text-xs flex items-center justify-center gap-1.5 transition cursor-pointer">
+              <span class="text-sm leading-none">𝕏</span><span>ポストする</span>
+            </a>
+          </div>
 
           <div class="grid grid-cols-2 gap-2 pt-0.5">
             <button id="btn-result-retry" class="game-btn py-2.5 sm:py-3 rounded-xl bg-gradient-to-r from-yellow-400 to-amber-500 text-slate-950 font-black text-sm shadow-[0_3px_0_#b45309]">
@@ -827,8 +876,8 @@
         <div class="flex-1 overflow-auto custom-scroll p-4 flex flex-col gap-3 text-xs text-slate-200">
           <div class="bg-slate-950/80 border border-slate-800 rounded-xl p-3 flex flex-col gap-1.5">
             <div class="flex justify-between gap-3"><span class="text-slate-400 shrink-0">ゲーム名</span><span class="font-black text-white text-right">なぜ南武線は混んでるのか？<br><span class="text-[10px] font-bold text-slate-400">NANBU LINE PUZZLE</span></span></div>
-            <div class="flex justify-between gap-3 border-t border-slate-800/80 pt-1.5"><span class="text-slate-400 shrink-0">バージョン</span><span class="ver-badge font-black text-yellow-300 tabular-nums">Ver.0.86</span></div>
-            <div class="flex justify-between gap-3 border-t border-slate-800/80 pt-1.5"><span class="text-slate-400 shrink-0">最終更新日</span><span class="font-bold text-slate-200 tabular-nums">2026年11月25日</span></div>
+            <div class="flex justify-between gap-3 border-t border-slate-800/80 pt-1.5"><span class="text-slate-400 shrink-0">バージョン</span><span class="ver-badge font-black text-yellow-300 tabular-nums">Ver.0.88</span></div>
+            <div class="flex justify-between gap-3 border-t border-slate-800/80 pt-1.5"><span class="text-slate-400 shrink-0">最終更新日</span><span class="font-bold text-slate-200 tabular-nums">2026年11月26日</span></div>
             <div class="flex justify-between gap-3 border-t border-slate-800/80 pt-1.5"><span class="text-slate-400 shrink-0">権利表記</span><span class="font-bold text-slate-200 text-right">Copyright (c) 2026 しーさいど</span></div>
             <div class="flex justify-between gap-3 border-t border-slate-800/80 pt-1.5"><span class="text-slate-400 shrink-0">ライセンス</span><span class="font-bold text-emerald-300">MIT License</span></div>
           </div>
@@ -841,6 +890,210 @@
               ※ 本プロジェクトのコーディングには AI（Gemini）を使用しています。<br>
               ※ 本ゲームは実在の鉄道会社様とは一切関係ありません。
             </p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- =========================================================
+         オーバーレイ⑥-C：サウンド・音量設定モーダル（SE・BGM個別調整）
+         ========================================================= -->
+    <div id="modal-sound" class="hidden absolute inset-0 z-[66] bg-slate-950/[0.92] backdrop-blur-md flex items-center justify-center p-3 sm:p-5">
+      <div class="w-full max-w-[400px] max-h-[88dvh] bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl overflow-hidden flex flex-col">
+        <div class="nambu-stripe h-2 w-full shrink-0"></div>
+        <div class="px-4 py-3 border-b border-slate-800 flex items-center justify-between shrink-0">
+          <h3 class="text-sm sm:text-base font-black text-white flex items-center gap-1.5">
+            <span>🔊</span><span>サウンド・音量設定</span>
+          </h3>
+          <button type="button" id="btn-close-sound" class="w-8 h-8 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-sm cursor-pointer">✕</button>
+        </div>
+        <div class="flex-1 overflow-y-auto custom-scroll p-4 flex flex-col gap-3.5 text-xs text-slate-200">
+          <!-- 効果音（SE）音量 -->
+          <div class="bg-slate-950/80 border border-slate-800 rounded-xl p-3 flex flex-col gap-2">
+            <div class="flex items-center justify-between">
+              <label for="slider-se-volume" class="font-black text-slate-100 flex items-center gap-1.5">
+                <span>🔔</span><span>効果音（SE）</span>
+              </label>
+              <span id="label-se-volume" class="font-black text-yellow-300 tabular-nums text-sm">100%</span>
+            </div>
+            <input id="slider-se-volume" type="range" min="0" max="100" step="1" value="100" class="w-full accent-yellow-400 cursor-pointer" />
+            <div class="flex justify-between text-[10px] text-slate-400">
+              <span>0%（消音）</span>
+              <span>既定：100%</span>
+            </div>
+          </div>
+
+          <!-- BGM音量 -->
+          <div class="bg-slate-950/80 border border-slate-800 rounded-xl p-3 flex flex-col gap-2">
+            <div class="flex items-center justify-between">
+              <label for="slider-bgm-volume" class="font-black text-slate-100 flex items-center gap-1.5">
+                <span>🎵</span><span>BGM（走行・タイトル曲）</span>
+              </label>
+              <span id="label-bgm-volume" class="font-black text-sky-300 tabular-nums text-sm">10%</span>
+            </div>
+            <input id="slider-bgm-volume" type="range" min="0" max="100" step="1" value="10" class="w-full accent-sky-400 cursor-pointer" />
+            <div class="flex justify-between text-[10px] text-slate-400">
+              <span>0%（停止）</span>
+              <span>既定：10%</span>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-2 gap-2 pt-0.5">
+            <button type="button" id="btn-sound-mute-toggle" class="game-btn py-2 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-600 text-white font-black text-xs cursor-pointer">
+              🔊 サウンド：ON
+            </button>
+            <button type="button" id="btn-sound-reset" class="game-btn py-2 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-600 text-amber-300 font-bold text-xs cursor-pointer">
+              ↺ 初期値に戻す
+            </button>
+          </div>
+          <p class="text-[10px] text-slate-400 text-center leading-relaxed">
+            ※ ブラウザの仕様により、最初のタップ／ボタン操作後からBGMが再生されます。
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <!-- =========================================================
+         オーバーレイ⑥-D：ハイスコア一覧・ランキングモーダル
+         ========================================================= -->
+    <div id="modal-highscore" class="hidden absolute inset-0 z-[64] bg-slate-950/[0.94] backdrop-blur-md flex items-center justify-center p-2.5 sm:p-5">
+      <div class="w-full max-w-[680px] h-[88dvh] max-h-[780px] bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl overflow-hidden flex flex-col">
+        <div class="nambu-stripe h-2 w-full shrink-0"></div>
+        <div class="px-4 py-3 border-b border-slate-800 flex items-center justify-between gap-2 shrink-0">
+          <h3 class="text-sm sm:text-base font-black text-white flex items-center gap-1.5 min-w-0">
+            <span>🏆</span><span>ハイスコア記録</span>
+            <span class="hidden sm:inline text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-800 border border-slate-700 text-slate-300">完走記録のみ</span>
+          </h3>
+          <div class="flex items-center gap-1.5 shrink-0">
+            <button type="button" id="btn-open-rank-help" class="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-600 text-[11px] font-bold text-amber-200 transition cursor-pointer whitespace-nowrap">
+              🏅 ランクについて
+            </button>
+            <button type="button" id="btn-close-highscore" class="w-8 h-8 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-sm cursor-pointer">✕</button>
+          </div>
+        </div>
+
+        <!-- タブ切替 -->
+        <div class="px-3 py-2 bg-slate-950/70 border-b border-slate-800 grid grid-cols-3 gap-1.5 shrink-0">
+          <button type="button" data-hs-tab="overall" class="hs-tab-btn px-1.5 py-1.5 rounded-lg border text-[10.5px] sm:text-xs font-black transition border-amber-400 bg-amber-400/20 text-amber-200 cursor-pointer">
+            🏆 総合 (TOP20)
+          </button>
+          <button type="button" data-hs-tab="courses" class="hs-tab-btn px-1.5 py-1.5 rounded-lg border text-[10.5px] sm:text-xs font-bold transition border-slate-700 bg-slate-800/80 text-slate-300 hover:border-slate-500 cursor-pointer">
+            🚃 シナリオ別
+          </button>
+          <button type="button" data-hs-tab="stats" class="hs-tab-btn px-1.5 py-1.5 rounded-lg border text-[10.5px] sm:text-xs font-bold transition border-slate-700 bg-slate-800/80 text-slate-300 hover:border-slate-500 cursor-pointer">
+            📊 輸送実績
+          </button>
+        </div>
+
+        <!-- スクロール本文 -->
+        <div class="flex-1 overflow-auto custom-scroll p-3 sm:p-4 flex flex-col gap-3">
+          <div id="hs-panel-overall" class="flex flex-col gap-2">
+            <div id="hs-overall-list" class="flex flex-col gap-2"></div>
+            <div id="hs-overall-actions" class="hidden bg-slate-950/85 border border-slate-800 rounded-xl px-3 py-2 flex flex-wrap items-center justify-between gap-2">
+              <div class="flex items-center gap-2">
+                <button type="button" id="btn-hs-select-all" class="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-600 text-[11px] font-bold text-slate-200 transition cursor-pointer">
+                  ☑ すべて選択
+                </button>
+                <span id="hs-selected-count" class="text-[11px] font-bold text-slate-400 tabular-nums">選択中: 0件</span>
+              </div>
+              <button type="button" id="btn-hs-delete-selected" disabled class="game-btn px-3 py-1.5 rounded-lg bg-rose-600/80 hover:bg-rose-500 border border-rose-400/70 text-white text-xs font-black transition cursor-pointer">
+                🗑 選択した記録を削除
+              </button>
+            </div>
+          </div>
+          <div id="hs-panel-courses" class="hidden grid grid-cols-1 sm:grid-cols-2 gap-2.5"></div>
+          <div id="hs-panel-stats" class="hidden flex flex-col gap-3"></div>
+
+          <!-- 保存仕様の注記 -->
+          <div class="mt-auto bg-slate-950/80 border border-slate-800 rounded-xl p-3 text-[11px] text-slate-300 leading-relaxed">
+            <div class="font-black text-amber-300 mb-1">💾 スコア保持の仕組みとご注意</div>
+            <p>
+              スコア記録はお使いのブラウザ内（<code class="text-slate-200">localStorage</code> / キャッシュ領域）に保存されます。
+              通常のページ更新やバージョンアップでは維持されますが、<span class="text-white font-bold">ブラウザのサイトデータ削除、シークレットモードでの利用、Safariの長期未アクセス</span>などブラウザ側の仕様により、意図せず記録が消去される場合があります。
+              端末・ブラウザの移行やバックアップには下の <span class="text-emerald-300 font-bold">CSV保存 / 読込</span> をご利用ください（読込時はスコアは合算マージ・輸送実績は大きい方を採用します）。
+            </p>
+          </div>
+        </div>
+
+        <!-- フッター：CSV保存 / 読込 / 削除 -->
+        <div class="px-3 py-2.5 sm:px-4 bg-slate-950/90 border-t border-slate-800 flex flex-wrap items-center justify-between gap-2 shrink-0">
+          <div class="flex items-center gap-2">
+            <button type="button" id="btn-hs-export" class="game-btn px-3 py-1.5 rounded-lg bg-emerald-600/25 hover:bg-emerald-600/35 border border-emerald-400/60 text-emerald-200 text-xs font-black cursor-pointer">
+              💾 CSV保存
+            </button>
+            <button type="button" id="btn-hs-import" class="game-btn px-3 py-1.5 rounded-lg bg-sky-600/25 hover:bg-sky-600/35 border border-sky-400/60 text-sky-200 text-xs font-black cursor-pointer">
+              📂 CSV読込
+            </button>
+            <input type="file" id="input-hs-csv" accept=".csv,text/csv" class="hidden" />
+          </div>
+          <button type="button" id="btn-hs-clear" class="px-2.5 py-1.5 rounded-lg bg-rose-950/40 hover:bg-rose-900/50 border border-rose-500/40 text-rose-300 text-[11px] font-bold transition cursor-pointer">
+            🗑 記録を初期化
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- =========================================================
+         オーバーレイ⑥-E：評価ランク説明モーダル（ハイスコア別窓）
+         ========================================================= -->
+    <div id="modal-rank-help" class="hidden absolute inset-0 z-[68] bg-slate-950/[0.90] backdrop-blur-md flex items-center justify-center p-3 sm:p-5">
+      <div class="w-full max-w-[440px] max-h-[84dvh] bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl overflow-hidden flex flex-col">
+        <div class="nambu-stripe h-2 w-full shrink-0"></div>
+        <div class="px-4 py-3 border-b border-slate-800 flex items-center justify-between shrink-0">
+          <h3 class="text-sm sm:text-base font-black text-white">🏅 評価ランクについて</h3>
+          <button type="button" id="btn-close-rank-help" class="w-8 h-8 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-sm cursor-pointer">✕</button>
+        </div>
+        <div class="flex-1 overflow-auto custom-scroll p-4 flex flex-col gap-2 text-xs text-slate-200">
+          <div class="rounded-xl border border-amber-400/50 bg-amber-950/25 px-3 py-2 flex items-center justify-between gap-3">
+            <span class="rank-ss-badge px-2 py-0.5 rounded border text-xs shrink-0">SS</span>
+            <span class="text-amber-100 font-bold text-right">遅延 0秒 ＆ スムーズ降車 98%以上</span>
+          </div>
+          <div class="rounded-xl border border-slate-700 bg-slate-800/70 px-3 py-2 flex items-center justify-between gap-3">
+            <span class="px-2 py-0.5 rounded border bg-amber-400/20 border-amber-400/70 text-amber-300 text-xs font-black shrink-0">S</span>
+            <span class="text-slate-200 text-right">遅延 15秒以内 ＆ スムーズ降車 90%以上</span>
+          </div>
+          <div class="rounded-xl border border-slate-700 bg-slate-800/70 px-3 py-2 flex items-center justify-between gap-3">
+            <span class="px-2 py-0.5 rounded border bg-emerald-500/20 border-emerald-400/60 text-emerald-300 text-xs font-black shrink-0">A</span>
+            <span class="text-slate-200 text-right">遅延 40秒以内 ＆ スムーズ降車 78%以上</span>
+          </div>
+          <div class="rounded-xl border border-slate-700 bg-slate-800/70 px-3 py-2 flex items-center justify-between gap-3">
+            <span class="px-2 py-0.5 rounded border bg-sky-500/20 border-sky-400/60 text-sky-300 text-xs font-black shrink-0">B</span>
+            <span class="text-slate-200 text-right">遅延 75秒以内（完走）</span>
+          </div>
+          <div class="rounded-xl border border-slate-700 bg-slate-800/70 px-3 py-2 flex items-center justify-between gap-3">
+            <span class="px-2 py-0.5 rounded border bg-slate-800 border-slate-600 text-slate-300 text-xs font-black shrink-0">C</span>
+            <span class="text-slate-300 text-right">上記以外の完走（遅延 76秒以上）</span>
+          </div>
+          <div class="rounded-xl border border-rose-500/35 bg-rose-950/20 px-3 py-2 flex items-center justify-between gap-3">
+            <span class="px-2 py-0.5 rounded border bg-slate-800 border-rose-500/50 text-rose-400 text-xs font-black shrink-0">D</span>
+            <span class="text-rose-200 text-right">運転中止（累計遅延 2分超過）</span>
+          </div>
+          <p class="text-[11px] text-slate-400 leading-relaxed pt-1">
+            ※ 評価はスコア点数ではなく、累計遅延時間とスムーズ降車率（詰まり無し割合）で決まります。
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <!-- =========================================================
+         オーバーレイ⑥-F：選択ハイスコア削除確認モーダル
+         ========================================================= -->
+    <div id="modal-hs-delete-confirm" class="hidden absolute inset-0 z-[69] bg-slate-950/[0.90] backdrop-blur-md flex items-center justify-center p-3 sm:p-5">
+      <div class="w-full max-w-[380px] max-h-[88dvh] bg-slate-900 border border-rose-500/60 rounded-2xl shadow-2xl overflow-hidden flex flex-col">
+        <div class="bg-rose-600 h-1.5 w-full shrink-0"></div>
+        <div class="p-4 sm:p-5 flex flex-col gap-3 text-center overflow-y-auto custom-scroll">
+          <div class="text-3xl leading-none">⚠️</div>
+          <h3 class="text-sm sm:text-base font-black text-white">選択したハイスコアを削除</h3>
+          <p id="hs-delete-confirm-msg" class="text-xs text-slate-300 leading-relaxed">
+            選択した記録を総合ランキング（TOP20）から削除しますか？この操作は元に戻せません。
+          </p>
+          <div class="grid grid-cols-2 gap-2 pt-1">
+            <button type="button" id="btn-cancel-hs-delete" class="game-btn py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-600 text-slate-200 font-bold text-xs sm:text-sm cursor-pointer">
+              キャンセル
+            </button>
+            <button type="button" id="btn-confirm-hs-delete" class="game-btn py-2 rounded-xl bg-rose-600 hover:bg-rose-500 border border-rose-400/70 text-white font-black text-xs sm:text-sm cursor-pointer">
+              削除する
+            </button>
           </div>
         </div>
       </div>
@@ -888,6 +1141,8 @@
   <!-- クラシック script 読込により file:// 直開きでも静的ホスティングでも動作 -->
   <script defer src="js/data.js"></script>
   <script defer src="js/sound.js"></script>
+  <script defer src="js/synth.js"></script>
+  <script defer src="js/bgm.js"></script>
   <script defer src="js/scenery.js"></script>
   <script defer src="js/puzzle.js"></script>
   <script defer src="js/ui.js"></script>

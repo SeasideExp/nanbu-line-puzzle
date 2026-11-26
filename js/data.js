@@ -6,7 +6,10 @@
 (function (global) {
   'use strict';
 
-  const APP_VERSION = 'Ver.0.86';
+  const APP_VERSION = 'Ver.0.88';
+
+  const SHARE_GAME_URL = 'https://seasideexp.github.io/nanbu-line-puzzle/';
+  const SHARE_HASHTAG = '#NanbuL_Puzzle';
 
   const BOARD_CONFIG = {
     ROWS: 5,
@@ -259,8 +262,52 @@
     penaltyPerStation: 100,
   };
 
+  /**
+   * サウンド（SE・BGM）設定（デフォルト：SE 100% / BGM 10%・本編BGMは開始1.3秒後）
+   */
+  const AUDIO_CONFIG = {
+    storageKey: 'nanbu_audio_settings_v1',
+    defaultSeVolume: 100,
+    defaultBgmVolume: 10,
+    seBaseGain: 0.9,
+    bgmMaxGain: 0.85,
+    gameBgmDelaySec: 1.3,
+  };
+
+  /**
+   * ハイスコア保存設定（GitHub Pagesの同一オリジン衝突防止のため固有キーを使用）
+   */
+  const HIGHSCORE_CONFIG = {
+    storageKey: 'nanbu_highscores_v1',
+    maxOverall: 20,
+    maxPerCourse: 3,
+  };
+
+  /**
+   * 全15列車の標準並び順（`${dirKey}:${courseKey}` 形式）
+   */
+  const TRAIN_ORDER = [
+    'down:full',
+    'down:rapid',
+    'down:trial',
+    'down:nakahara',
+    'down:noborito',
+    'down:rapid_inagi',
+    'up:full',
+    'up:rapid',
+    'up:trial',
+    'up:nakahara',
+    'up:mizonokuchi',
+    'up:inagi_naganuma',
+    'up:nishikunitachi',
+    'up:tachikawa_nakahara',
+    'up:rapid_noborito',
+  ];
+
   global.NanbuData = {
     APP_VERSION,
+    SHARE_GAME_URL,
+    SHARE_HASHTAG,
     BOARD_CONFIG,
     STATIONS,
     OD_MATRIX_13,
@@ -278,5 +325,8 @@
     PRIORITY_SPACES,
     STROLLER_CONFIG,
     ELDERLY_CONFIG,
+    AUDIO_CONFIG,
+    HIGHSCORE_CONFIG,
+    TRAIN_ORDER,
   };
 })(window);

@@ -5,14 +5,40 @@
 (function (global) {
   'use strict';
 
-  const { APP_VERSION, BOARD_CONFIG, STATIONS, DIRECTIONS, DIFFICULTIES, COURSES, RAPID_CONNECTIONS, G1_CONFIG, JIZO_CELLS, STROLLER_CONFIG, ELDERLY_CONFIG } = global.NanbuData;
+  const {
+    APP_VERSION,
+    BOARD_CONFIG,
+    STATIONS,
+    DIRECTIONS,
+    DIFFICULTIES,
+    COURSES,
+    RAPID_CONNECTIONS,
+    G1_CONFIG,
+    JIZO_CELLS,
+    STROLLER_CONFIG,
+    ELDERLY_CONFIG,
+    AUDIO_CONFIG,
+  } = global.NanbuData;
   const { ROWS, COLS, MAX_DELAY_SEC } = BOARD_CONFIG;
-  const { SoundEngine } = global.NanbuSound;
+  const { loadAudioSettings, saveAudioSettings, SoundEngine } = global.NanbuSound;
+  const { TrainPuzzleBgmPlayer } = global.NanbuBgm;
   const { SceneryRenderer, getSceneryModeAtPos, getStationSceneryMode, calcTrackPosition } = global.NanbuScenery;
   const Puzzle = global.NanbuPuzzle;
   const UI = global.NanbuUI;
 
+  const audioSettings = loadAudioSettings();
   const sound = new SoundEngine();
+  sound.setSeVolume(audioSettings.seVolume / 100);
+  sound.setMuted(audioSettings.muted);
+
+  const bgm = new TrainPuzzleBgmPlayer({
+    getAudioContext: () => sound.ensureContext(),
+    initialVolume: audioSettings.bgmVolume / 100,
+  });
+  bgm.setMuted(audioSettings.muted);
+
+  let titleBgmUnlocked = false;
+  let cleanupGestureUnlockFn = null;
   let el = null;
   let scenery = null;
 
@@ -54,6 +80,8 @@
     maxPerfectStreak: 0,
     g1Active: false,
     scoreBreakdown: null,
+    highScoreResult: null,
+    latestShareText: '',
 
     // 操作状態
     selectedCell: null, // { r, c }
@@ -62,6 +90,7 @@
     dragDidSwap: false,
     activePointerId: null,
     capturingScreenshot: false,
+    hasDeparted: false,
 
     // 到達判定結果
     reachability: new Map(), // passengerUid -> boolean
@@ -83,8 +112,12 @@
     return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
+  function isAsyncStepBlocked() {
+    return state.phase === 'PAUSED' || state.capturingScreenshot || document.hidden;
+  }
+
   async function waitIfPaused(myRunId) {
-    while ((state.phase === 'PAUSED' || state.capturingScreenshot) && state.runId === myRunId) {
+    while (isAsyncStepBlocked() && state.runId === myRunId) {
       await new Promise((resolve) => pauseWaiters.push(resolve));
     }
     return state.runId === myRunId;
@@ -94,7 +127,7 @@
     let remaining = Math.max(0, ms);
     while (remaining > 0) {
       if (state.runId !== myRunId) return false;
-      if (state.phase === 'PAUSED' || state.capturingScreenshot) {
+      if (isAsyncStepBlocked()) {
         const ok = await waitIfPaused(myRunId);
         if (!ok) return false;
         continue;
@@ -103,7 +136,7 @@
       const t0 = performance.now();
       await sleep(chunk);
       if (state.runId !== myRunId) return false;
-      if (state.phase === 'PAUSED' || state.capturingScreenshot) {
+      if (isAsyncStepBlocked()) {
         const ok = await waitIfPaused(myRunId);
         if (!ok) return false;
       } else {
@@ -439,13 +472,25 @@
 
   async function startGame() {
     if (state.phase === 'STARTING' || state.capturingScreenshot) return;
-    sound.init();
+    titleBgmUnlocked = true;
+    if (cleanupGestureUnlockFn) cleanupGestureUnlockFn();
+    if (el.titleBgmHint) el.titleBgmHint.classList.add('hidden');
+    sound.ensureContext();
+    sound.resume();
+    bgm.stop();
+    state.hasDeparted = false;
     const myRunId = (state.runId || 0) + 1;
     state.runId = myRunId;
     state.phase = 'STARTING';
+    state.highScoreResult = null;
+    state.latestShareText = '';
     flushPauseWaiters();
     if (el.fxLayer) el.fxLayer.innerHTML = '';
     if (el.modalDeparture) el.modalDeparture.classList.add('hidden');
+    if (el.modalSound) el.modalSound.classList.add('hidden');
+    if (el.modalHighscore) el.modalHighscore.classList.add('hidden');
+    if (el.modalRankHelp) el.modalRankHelp.classList.add('hidden');
+    if (el.modalHsDeleteConfirm) el.modalHsDeleteConfirm.classList.add('hidden');
     if (el.doorsContainer) el.doorsContainer.classList.remove('doors-open');
 
     const dir = DIRECTIONS[state.direction] || DIRECTIONS.down;
@@ -582,6 +627,8 @@
         void popEl.offsetWidth;
         popEl.classList.add('departure-pop');
       }
+      state.hasDeparted = true;
+      bgm.playGame();
       sound.playDeparture();
       if (!(await pausableSleep(1500, myRunId))) return false;
       if (state.phase !== 'STARTING') return false;
@@ -858,6 +905,13 @@
       UI.renderGrid(el, state);
     }
 
+    // 遅延上限オーバー判定（かき分け降車で超過確定時は座席ボーナス・減点演出を行わず即終了）
+    if (state.delaySec > MAX_DELAY_SEC) {
+      UI.updateHUD(el, state);
+      showResult(false);
+      return;
+    }
+
     // 座席ボーナス（座席に座って乗り越した乗客1人につき +20pt）
     const isFinalStation = arrivalStopPos >= state.routeStops.length - 1;
     const seatedCount = Puzzle.countSeatedPassengers(state.grid);
@@ -901,12 +955,6 @@
 
     UI.updateHUD(el, state);
 
-    // 遅延上限オーバー判定
-    if (state.delaySec > MAX_DELAY_SEC) {
-      showResult(false);
-      return;
-    }
-
     // 終点到達クリア判定
     if (isFinalStation) {
       if (!(await pausableSleep(350, myRunId))) return;
@@ -922,7 +970,6 @@
       elderlyEnabled: state.elderly,
       allocateStrollerGroupId,
     });
-    recordBoardedPassengers(incoming, boardedUids);
 
     // 乗車反映にあわせて下部「次駅降車」カウンターを次停車駅基準へ先行更新
     const upcomingIdx = state.routeStops[Math.min(arrivalStopPos + 1, state.routeStops.length - 1)];
@@ -949,6 +996,9 @@
         return;
       }
     }
+
+    // 発車が確定した時点で乗車ログへ記録（未発車ゲームオーバー時の動向・グラフ乖離を防止）
+    recordBoardedPassengers(incoming, boardedUids);
 
     // ドア閉め → 次区間出発
     el.doorsContainer.classList.remove('doors-open');
@@ -981,6 +1031,33 @@
     UI.updateHUD(el, state);
 
     if (isClear) {
+      const smoothRate = Puzzle.calcSmoothRate(state.smoothAlighted, state.totalAlighted);
+      const evalInfo = Puzzle.evaluateClearRank(state.delaySec, smoothRate);
+      const activeMods = [];
+      if (state.doorJizo) activeMods.push('doorJizo');
+      if (state.g1Active) activeMods.push('g1Event');
+      if (state.stroller) activeMods.push('stroller');
+      if (state.elderly) activeMods.push('elderly');
+
+      state.highScoreResult = Puzzle.recordHighScore(
+        {
+          courseKey: Puzzle.getTrainKey(state.direction, state.courseKey),
+          score: finalScore,
+          rank: evalInfo.rank,
+          diffKey: state.diffKey,
+          mods: activeMods,
+          delaySec: Math.round(state.delaySec),
+          smoothRate,
+          achievedAt: new Date().toISOString(),
+        },
+        state.passengerLog
+      );
+    } else {
+      state.highScoreResult = null;
+    }
+
+    bgm.stop();
+    if (isClear) {
       sound.playClearFanfare();
     } else {
       sound.playGameOver();
@@ -998,9 +1075,11 @@
     const dt = Math.min(0.1, (now - lastFrameTime) / 1000);
     lastFrameTime = now;
 
-    scenery.update(dt);
+    if (!state.capturingScreenshot && !document.hidden) {
+      scenery.update(dt);
+    }
 
-    if (state.phase === 'RUNNING' && !state.capturingScreenshot) {
+    if (state.phase === 'RUNNING' && !state.capturingScreenshot && !document.hidden) {
       state.timeRemaining -= dt;
       syncRunningScenery();
 
@@ -1205,11 +1284,252 @@
       }
     });
 
+    // サウンド・BGM 音量UI同期 ＆ 初回ジェスチャ解放 ＆ タブ非表示連動
+    const syncAudioControlsUI = () => {
+      if (el.btnMute) {
+        el.btnMute.textContent = audioSettings.muted ? '🔇' : '🔊';
+      }
+      if (el.sliderSeVolume) {
+        el.sliderSeVolume.value = String(audioSettings.seVolume);
+      }
+      if (el.labelSeVolume) {
+        el.labelSeVolume.textContent = `${audioSettings.seVolume}%`;
+      }
+      if (el.sliderBgmVolume) {
+        el.sliderBgmVolume.value = String(audioSettings.bgmVolume);
+      }
+      if (el.labelBgmVolume) {
+        el.labelBgmVolume.textContent = `${audioSettings.bgmVolume}%`;
+      }
+      if (el.btnSoundMuteToggle) {
+        el.btnSoundMuteToggle.textContent = audioSettings.muted
+          ? '🔇 サウンド：OFF（ミュート中）'
+          : '🔊 サウンド：ON';
+        el.btnSoundMuteToggle.className = audioSettings.muted
+          ? 'game-btn py-2 px-3 rounded-xl bg-rose-950/70 hover:bg-rose-900/70 border border-rose-500/60 text-rose-200 font-black text-xs cursor-pointer'
+          : 'game-btn py-2 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-600 text-white font-black text-xs cursor-pointer';
+      }
+      if (el.titleBgmHint) {
+        const showBgmHint =
+          state.phase === 'TITLE' &&
+          !titleBgmUnlocked &&
+          !bgm.isPlaying &&
+          !audioSettings.muted &&
+          audioSettings.bgmVolume > 0;
+        el.titleBgmHint.classList.toggle('hidden', !showBgmHint);
+      }
+    };
+
+    const ensureBgmPlayingForCurrentPhase = () => {
+      if (audioSettings.muted || audioSettings.bgmVolume <= 0 || state.phase === 'PAUSED') return;
+      if (state.phase === 'TITLE') {
+        if (bgm.desiredMode !== 'title' || !bgm.isActiveOrPending()) {
+          bgm.playTitle();
+        }
+      } else if (
+        state.hasDeparted &&
+        (state.phase === 'STARTING' ||
+          state.phase === 'RUNNING' ||
+          state.phase === 'ALIGHTING' ||
+          state.phase === 'BOARDING')
+      ) {
+        if (bgm.paused) {
+          bgm.resume();
+        } else if (bgm.desiredMode !== 'game' || !bgm.isActiveOrPending()) {
+          bgm.playGame();
+        }
+      }
+    };
+
+    const setGlobalMuted = (nextMuted) => {
+      audioSettings.muted = !!nextMuted;
+      saveAudioSettings(audioSettings);
+      sound.setMuted(audioSettings.muted);
+      if (!audioSettings.muted && state.phase !== 'PAUSED') {
+        sound.ensureContext();
+      }
+      bgm.setMuted(audioSettings.muted);
+      if (!audioSettings.muted && state.phase !== 'PAUSED') {
+        ensureBgmPlayingForCurrentPhase();
+      }
+      syncAudioControlsUI();
+    };
+
+    syncAudioControlsUI();
+
+    const cleanupGestureUnlock = () => {
+      document.removeEventListener('pointerdown', unlockTitleAudioOnFirstGesture);
+      document.removeEventListener('touchend', unlockTitleAudioOnFirstGesture);
+      document.removeEventListener('click', unlockTitleAudioOnFirstGesture);
+      document.removeEventListener('keydown', unlockTitleAudioOnFirstGesture);
+    };
+    cleanupGestureUnlockFn = cleanupGestureUnlock;
+
+    const NON_ACTIVATION_KEYS = new Set([
+      'Shift',
+      'Control',
+      'Alt',
+      'Meta',
+      'Escape',
+      'Tab',
+      'CapsLock',
+      'NumLock',
+      'ScrollLock',
+    ]);
+    let unlockingTitleBgm = false;
+
+    const unlockTitleAudioOnFirstGesture = async (e) => {
+      if (titleBgmUnlocked) {
+        cleanupGestureUnlock();
+        return;
+      }
+      if (unlockingTitleBgm) return;
+      if (e.type === 'keydown' && (e.isComposing || NON_ACTIVATION_KEYS.has(e.key))) return;
+      if (el.btnMute && e.target && el.btnMute.contains(e.target)) return;
+      if (el.btnStartGame && e.target && el.btnStartGame.contains(e.target)) return;
+      if (el.btnTitleBgmHint && e.target && el.btnTitleBgmHint.contains(e.target)) return;
+      if (state.phase !== 'TITLE') return;
+
+      unlockingTitleBgm = true;
+      try {
+        const ctx = sound.ensureContext();
+        let unlocked = Boolean(ctx && ctx.state === 'running');
+        if (!audioSettings.muted && audioSettings.bgmVolume > 0) {
+          const started = await bgm.playTitle();
+          unlocked = started || Boolean(ctx && ctx.state === 'running');
+        }
+        if (unlocked) {
+          titleBgmUnlocked = true;
+          cleanupGestureUnlock();
+        }
+        syncAudioControlsUI();
+      } finally {
+        unlockingTitleBgm = false;
+      }
+    };
+    document.addEventListener('pointerdown', unlockTitleAudioOnFirstGesture);
+    document.addEventListener('touchend', unlockTitleAudioOnFirstGesture);
+    document.addEventListener('click', unlockTitleAudioOnFirstGesture);
+    document.addEventListener('keydown', unlockTitleAudioOnFirstGesture);
+
+    if (el.btnTitleBgmHint) {
+      el.btnTitleBgmHint.addEventListener('click', async () => {
+        titleBgmUnlocked = true;
+        cleanupGestureUnlock();
+        sound.ensureContext();
+        if (!audioSettings.muted && audioSettings.bgmVolume > 0) {
+          await bgm.playTitle();
+        }
+        syncAudioControlsUI();
+      });
+    }
+
+    // 初回ロード時は AudioContext を先走って生成せず（Autoplay 警告回避）、初回ジェスチャで解放する
+    syncAudioControlsUI();
+
     // ミュート切替
     el.btnMute.addEventListener('click', () => {
-      sound.muted = !sound.muted;
-      el.btnMute.textContent = sound.muted ? '🔇' : '🔊';
-      if (!sound.muted) sound.init();
+      titleBgmUnlocked = true;
+      cleanupGestureUnlock();
+      setGlobalMuted(!audioSettings.muted);
+    });
+
+    if (el.btnOpenSoundTitle && el.modalSound) {
+      el.btnOpenSoundTitle.addEventListener('click', () => {
+        syncAudioControlsUI();
+        el.modalSound.classList.remove('hidden');
+      });
+    }
+    if (el.btnOpenSoundPause && el.modalSound) {
+      el.btnOpenSoundPause.addEventListener('click', () => {
+        syncAudioControlsUI();
+        el.modalSound.classList.remove('hidden');
+      });
+    }
+    if (el.btnCloseSound && el.modalSound) {
+      el.btnCloseSound.addEventListener('click', () => {
+        el.modalSound.classList.add('hidden');
+      });
+    }
+    if (el.sliderSeVolume) {
+      el.sliderSeVolume.addEventListener('input', () => {
+        audioSettings.seVolume = Number(el.sliderSeVolume.value);
+        saveAudioSettings(audioSettings);
+        sound.setSeVolume(audioSettings.seVolume / 100);
+        syncAudioControlsUI();
+      });
+      el.sliderSeVolume.addEventListener('change', () => {
+        if (!audioSettings.muted && audioSettings.seVolume > 0 && state.phase !== 'PAUSED') {
+          sound.playVolumeTest();
+        }
+      });
+    }
+    if (el.sliderBgmVolume) {
+      el.sliderBgmVolume.addEventListener('input', () => {
+        titleBgmUnlocked = true;
+        cleanupGestureUnlock();
+        audioSettings.bgmVolume = Number(el.sliderBgmVolume.value);
+        saveAudioSettings(audioSettings);
+        if (state.phase !== 'PAUSED' && !audioSettings.muted && audioSettings.bgmVolume > 0) {
+          sound.ensureContext();
+        }
+        bgm.setVolume(audioSettings.bgmVolume / 100);
+        if (state.phase !== 'PAUSED') {
+          ensureBgmPlayingForCurrentPhase();
+        }
+        syncAudioControlsUI();
+      });
+    }
+    if (el.btnSoundMuteToggle) {
+      el.btnSoundMuteToggle.addEventListener('click', () => {
+        titleBgmUnlocked = true;
+        cleanupGestureUnlock();
+        setGlobalMuted(!audioSettings.muted);
+      });
+    }
+    if (el.btnSoundReset) {
+      el.btnSoundReset.addEventListener('click', () => {
+        titleBgmUnlocked = true;
+        cleanupGestureUnlock();
+        audioSettings.seVolume = AUDIO_CONFIG.defaultSeVolume;
+        audioSettings.bgmVolume = AUDIO_CONFIG.defaultBgmVolume;
+        audioSettings.muted = false;
+        saveAudioSettings(audioSettings);
+        sound.setSeVolume(audioSettings.seVolume / 100);
+        sound.setMuted(false);
+        if (state.phase !== 'PAUSED') {
+          sound.ensureContext();
+        }
+        bgm.setVolume(audioSettings.bgmVolume / 100);
+        bgm.setMuted(false);
+        if (state.phase !== 'PAUSED') {
+          ensureBgmPlayingForCurrentPhase();
+          sound.playVolumeTest();
+        }
+        syncAudioControlsUI();
+      });
+    }
+
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) {
+        bgm.pause();
+        sound.pause();
+      } else {
+        lastFrameTime = performance.now();
+        if (state.phase !== 'PAUSED') {
+          sound.resume();
+        }
+        if (
+          state.phase === 'TITLE' ||
+          state.phase === 'STARTING' ||
+          state.phase === 'RUNNING' ||
+          state.phase === 'ALIGHTING' ||
+          state.phase === 'BOARDING'
+        ) {
+          bgm.resume();
+        }
+        flushPauseWaiters();
+      }
     });
 
     // 一時停止（RUNNING / ALIGHTING / BOARDING 中に安全にメニューを開ける）
@@ -1226,6 +1546,8 @@
         state.dragging = false;
         state.dragCell = null;
         releaseActivePointerCapture();
+        bgm.pause();
+        sound.pause();
         scenery.setMode(false);
         if (state.prevPhaseBeforePause === 'RUNNING') {
           UI.renderGrid(el, state);
@@ -1235,9 +1557,12 @@
     });
 
     el.btnResume.addEventListener('click', () => {
-      if (state.capturingScreenshot) return;
+      if (state.capturingScreenshot || state.phase !== 'PAUSED') return;
       el.modalPause.classList.add('hidden');
       state.phase = state.prevPhaseBeforePause;
+      lastFrameTime = performance.now();
+      sound.resume();
+      bgm.resume();
       if (state.phase === 'RUNNING') {
         syncRunningScenery();
       }
@@ -1250,10 +1575,18 @@
       if (state.capturingScreenshot) return;
       state.runId = (state.runId || 0) + 1;
       state.phase = 'TITLE';
+      state.hasDeparted = false;
+      titleBgmUnlocked = true;
+      if (cleanupGestureUnlockFn) cleanupGestureUnlockFn();
       flushPauseWaiters();
+      sound.resume();
+      bgm.playTitle();
+      syncAudioControlsUI();
       state.selectedCell = null;
       state.dragging = false;
       state.dragCell = null;
+      state.highScoreResult = null;
+      state.latestShareText = '';
       releaseActivePointerCapture();
       if (el.fxLayer) el.fxLayer.innerHTML = '';
       if (el.doorsContainer) el.doorsContainer.classList.remove('doors-open');
@@ -1264,6 +1597,14 @@
       if (el.modalDeparture) el.modalDeparture.classList.add('hidden');
       if (el.modalTransferBanner) el.modalTransferBanner.classList.add('hidden');
       if (el.modalResultDetail) el.modalResultDetail.classList.add('hidden');
+      if (el.modalData) el.modalData.classList.add('hidden');
+      if (el.modalSound) el.modalSound.classList.add('hidden');
+      if (el.modalModHelp) el.modalModHelp.classList.add('hidden');
+      if (el.modalHowto) el.modalHowto.classList.add('hidden');
+      if (el.modalAbout) el.modalAbout.classList.add('hidden');
+      if (el.modalRankHelp) el.modalRankHelp.classList.add('hidden');
+      if (el.modalHsDeleteConfirm) el.modalHsDeleteConfirm.classList.add('hidden');
+      if (el.modalHighscore) el.modalHighscore.classList.add('hidden');
       el.modalPause.classList.add('hidden');
       el.modalResult.classList.add('hidden');
       el.modalTitle.classList.remove('hidden');
@@ -1505,11 +1846,285 @@
       });
     }
 
+    // SNSシェア：リザルト結果テキストのクリップボードコピー
+    const copyTextToClipboard = async (text) => {
+      if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+        try {
+          await navigator.clipboard.writeText(text);
+          return true;
+        } catch (_e) {
+          // HTTP / file:// 環境ではフォールバックを使用
+        }
+      }
+      try {
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        ta.setAttribute('readonly', '');
+        ta.style.position = 'fixed';
+        ta.style.top = '-9999px';
+        ta.style.left = '-9999px';
+        document.body.appendChild(ta);
+        ta.select();
+        ta.setSelectionRange(0, text.length);
+        const ok = document.execCommand('copy');
+        document.body.removeChild(ta);
+        return !!ok;
+      } catch (_e) {
+        return false;
+      }
+    };
+
+    let shareCopyFeedbackTimer = null;
+    if (el.btnResultShareCopy) {
+      el.btnResultShareCopy.addEventListener('click', async () => {
+        if (state.capturingScreenshot) return;
+        const text = state.latestShareText || UI.buildResultShareText(state, state.phase === 'CLEAR');
+        const ok = await copyTextToClipboard(text);
+        if (ok) {
+          showToast('📋 リザルト結果をコピーしました');
+          el.btnResultShareCopy.innerHTML = '<span>✅</span><span>コピー完了</span>';
+          if (shareCopyFeedbackTimer) clearTimeout(shareCopyFeedbackTimer);
+          shareCopyFeedbackTimer = setTimeout(() => {
+            if (el.btnResultShareCopy) {
+              el.btnResultShareCopy.innerHTML = '<span>📋</span><span>結果をコピー</span>';
+            }
+          }, 1800);
+        } else {
+          showToast('⚠️ クリップボードへのコピーに失敗しました', 'warning');
+        }
+      });
+    }
+
+    // ハイスコア別窓モーダル・タブ切替・選択削除・CSVセーブ／ロード
+    const setHighscoreTab = (tabKey) => {
+      document.querySelectorAll('.hs-tab-btn').forEach((b) => {
+        const active = b.dataset.hsTab === tabKey;
+        b.className = active
+          ? 'hs-tab-btn px-1.5 py-1.5 rounded-lg border text-[10.5px] sm:text-xs font-black transition border-amber-400 bg-amber-400/20 text-amber-200 cursor-pointer'
+          : 'hs-tab-btn px-1.5 py-1.5 rounded-lg border text-[10.5px] sm:text-xs font-bold transition border-slate-700 bg-slate-800/80 text-slate-300 hover:border-slate-500 cursor-pointer';
+      });
+      if (el.hsPanelOverall) el.hsPanelOverall.classList.toggle('hidden', tabKey !== 'overall');
+      if (el.hsPanelCourses) el.hsPanelCourses.classList.toggle('hidden', tabKey !== 'courses');
+      if (el.hsPanelStats) el.hsPanelStats.classList.toggle('hidden', tabKey !== 'stats');
+    };
+
+    const getCurrentTrainKey = () => Puzzle.getTrainKey(state.direction, state.courseKey);
+
+    const openHighscoreModal = (defaultTab = 'overall') => {
+      if (!el.modalHighscore) return;
+      const store = Puzzle.loadHighScores();
+      UI.renderHighScoreModal(el, store, getCurrentTrainKey());
+      setHighscoreTab(defaultTab);
+      el.modalHighscore.classList.remove('hidden');
+    };
+
+    document.querySelectorAll('.hs-tab-btn').forEach((btn) => {
+      btn.addEventListener('click', () => setHighscoreTab(btn.dataset.hsTab));
+    });
+
+    if (el.btnOpenHighscore) {
+      el.btnOpenHighscore.addEventListener('click', () => openHighscoreModal('overall'));
+    }
+    if (el.btnResultHighscore) {
+      el.btnResultHighscore.addEventListener('click', () => {
+        if (state.capturingScreenshot) return;
+        openHighscoreModal('overall');
+      });
+    }
+    if (el.btnCloseHighscore && el.modalHighscore) {
+      el.btnCloseHighscore.addEventListener('click', () => {
+        if (el.modalRankHelp) el.modalRankHelp.classList.add('hidden');
+        if (el.modalHsDeleteConfirm) el.modalHsDeleteConfirm.classList.add('hidden');
+        el.modalHighscore.classList.add('hidden');
+      });
+    }
+    const getSelectedOverallKeys = () => {
+      const container = el.hsOverallList || el.hsPanelOverall;
+      if (!container) return [];
+      return Array.from(container.querySelectorAll('.hs-overall-check:checked')).map((chk) =>
+        decodeURIComponent(chk.value || '')
+      );
+    };
+    if (el.hsOverallList) {
+      el.hsOverallList.addEventListener('change', (e) => {
+        if (e.target && e.target.classList && e.target.classList.contains('hs-overall-check')) {
+          UI.syncHighScoreSelectionUI(el);
+        }
+      });
+    }
+    if (el.btnHsSelectAll) {
+      el.btnHsSelectAll.addEventListener('click', () => {
+        const container = el.hsOverallList || el.hsPanelOverall;
+        if (!container) return;
+        const checks = Array.from(container.querySelectorAll('.hs-overall-check'));
+        if (checks.length === 0) return;
+        const shouldSelectAll = !checks.every((c) => c.checked);
+        checks.forEach((c) => {
+          c.checked = shouldSelectAll;
+        });
+        UI.syncHighScoreSelectionUI(el);
+      });
+    }
+    if (el.btnHsDeleteSelected && el.modalHsDeleteConfirm) {
+      el.btnHsDeleteSelected.addEventListener('click', () => {
+        const keys = getSelectedOverallKeys();
+        if (keys.length === 0) return;
+        if (el.hsDeleteConfirmMsg) {
+          el.hsDeleteConfirmMsg.textContent = `選択した ${keys.length}件 の記録を総合ランキング（TOP20）から削除しますか？この操作は元に戻せません。`;
+        }
+        el.modalHsDeleteConfirm.classList.remove('hidden');
+      });
+    }
+    if (el.btnCancelHsDelete && el.modalHsDeleteConfirm) {
+      el.btnCancelHsDelete.addEventListener('click', () => {
+        el.modalHsDeleteConfirm.classList.add('hidden');
+      });
+    }
+    if (el.btnConfirmHsDelete && el.modalHsDeleteConfirm) {
+      el.btnConfirmHsDelete.addEventListener('click', () => {
+        const keys = getSelectedOverallKeys();
+        el.modalHsDeleteConfirm.classList.add('hidden');
+        if (keys.length === 0) return;
+        const updated = Puzzle.deleteOverallHighScores(keys);
+        if (state.highScoreResult && state.highScoreResult.record) {
+          const curKey = Puzzle.getScoreRecordKey(state.highScoreResult.record);
+          if (keys.includes(curKey) && el.resRecordBanner) {
+            el.resRecordBanner.classList.add('hidden');
+            state.highScoreResult = null;
+          }
+        }
+        UI.renderHighScoreModal(el, updated, getCurrentTrainKey());
+        showToast(`🗑 選択した ${keys.length}件 の記録を削除しました`);
+      });
+    }
+    if (el.modalHsDeleteConfirm) {
+      el.modalHsDeleteConfirm.addEventListener('click', (e) => {
+        if (e.target === el.modalHsDeleteConfirm) {
+          el.modalHsDeleteConfirm.classList.add('hidden');
+        }
+      });
+    }
+    if (el.btnOpenRankHelp && el.modalRankHelp) {
+      el.btnOpenRankHelp.addEventListener('click', () => {
+        el.modalRankHelp.classList.remove('hidden');
+      });
+    }
+    if (el.btnCloseRankHelp && el.modalRankHelp) {
+      el.btnCloseRankHelp.addEventListener('click', () => {
+        el.modalRankHelp.classList.add('hidden');
+      });
+    }
+    if (el.modalRankHelp) {
+      el.modalRankHelp.addEventListener('click', (e) => {
+        if (e.target === el.modalRankHelp) {
+          el.modalRankHelp.classList.add('hidden');
+        }
+      });
+    }
+
+    if (el.btnHsExport) {
+      el.btnHsExport.addEventListener('click', () => {
+        const csv = Puzzle.exportHighScoresToCsv();
+        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const now = new Date();
+        const stamp = [
+          now.getFullYear(),
+          String(now.getMonth() + 1).padStart(2, '0'),
+          String(now.getDate()).padStart(2, '0'),
+          '-',
+          String(now.getHours()).padStart(2, '0'),
+          String(now.getMinutes()).padStart(2, '0'),
+          String(now.getSeconds()).padStart(2, '0'),
+        ].join('');
+        triggerDownloadDataUrl(url, `nanbu-highscores-${stamp}.csv`);
+        setTimeout(() => URL.revokeObjectURL(url), 5000);
+        showToast('💾 ハイスコアCSVを保存しました');
+      });
+    }
+
+    if (el.btnHsImport && el.inputHsCsv) {
+      el.btnHsImport.addEventListener('click', () => {
+        el.inputHsCsv.value = '';
+        el.inputHsCsv.click();
+      });
+      el.inputHsCsv.addEventListener('change', async () => {
+        const file = el.inputHsCsv.files && el.inputHsCsv.files[0];
+        if (!file) return;
+        try {
+          const text = await file.text();
+          const res = Puzzle.importHighScoresFromCsv(text);
+          if (!res.ok) {
+            sound.playDelayAlert();
+            showToast(`⚠️ ${res.error || 'CSVの読み込みに失敗しました'}`, 'warning');
+            return;
+          }
+          UI.renderHighScoreModal(el, res.store, getCurrentTrainKey());
+          const skipNote = res.skippedCount > 0 ? `（無効行 ${res.skippedCount}件除外）` : '';
+          const scoreCnt = res.importedScoreCount || 0;
+          const hasStats = (res.importedStatsCount || 0) > 0;
+          const summaryMsg =
+            scoreCnt > 0 && hasStats
+              ? `スコア ${scoreCnt}件・輸送実績をマージ読込しました`
+              : scoreCnt > 0
+                ? `スコア ${scoreCnt}件をマージ読込しました`
+                : '輸送実績データをマージ読込しました';
+          showToast(`📂 CSVから${summaryMsg}${skipNote}`);
+        } catch (_e) {
+          sound.playDelayAlert();
+          showToast('⚠️ CSVファイルの読み込みに失敗しました', 'warning');
+        }
+      });
+    }
+
+    if (el.btnHsClear) {
+      el.btnHsClear.addEventListener('click', () => {
+        if (!global.confirm('保存されているハイスコア記録をすべて削除しますか？')) return;
+        const cleared = Puzzle.clearHighScores();
+        state.highScoreResult = null;
+        if (el.resRecordBanner) el.resRecordBanner.classList.add('hidden');
+        UI.renderHighScoreModal(el, cleared, getCurrentTrainKey());
+        showToast('🗑 ハイスコア記録を初期化しました');
+      });
+    }
+
+    // サブモーダルの背景クリックで閉じる挙動を統一
+    const bindBackdropClose = (modal, onClose = null) => {
+      if (!modal) return;
+      modal.addEventListener('click', (e) => {
+        if (e.target !== modal) return;
+        if (state.capturingScreenshot) return;
+        if (onClose) onClose();
+        else modal.classList.add('hidden');
+      });
+    };
+    bindBackdropClose(el.modalSound);
+    bindBackdropClose(el.modalData);
+    bindBackdropClose(el.modalModHelp);
+    bindBackdropClose(el.modalHowto);
+    bindBackdropClose(el.modalAbout);
+    bindBackdropClose(el.modalResultDetail);
+    bindBackdropClose(el.modalHighscore, () => {
+      if (el.modalRankHelp) el.modalRankHelp.classList.add('hidden');
+      if (el.modalHsDeleteConfirm) el.modalHsDeleteConfirm.classList.add('hidden');
+      el.modalHighscore.classList.add('hidden');
+    });
+
     // Escape キー：サブモーダル優先で閉じ、閉じていてプレイ中（RUNNING / PAUSED）ならポーズをトグル
     global.addEventListener('keydown', (e) => {
       if (e.key !== 'Escape') return;
       if (state.capturingScreenshot) return;
-      const subModals = [el.modalAbout, el.modalModHelp, el.modalHowto, el.modalData, el.modalResultDetail];
+      const subModals = [
+        el.modalHsDeleteConfirm,
+        el.modalRankHelp,
+        el.modalSound,
+        el.modalAbout,
+        el.modalHighscore,
+        el.modalModHelp,
+        el.modalHowto,
+        el.modalData,
+        el.modalResultDetail,
+      ];
       for (const modal of subModals) {
         if (modal && !modal.classList.contains('hidden')) {
           modal.classList.add('hidden');

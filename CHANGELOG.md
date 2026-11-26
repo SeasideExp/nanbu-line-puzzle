@@ -4,6 +4,21 @@
 
 ---
 
+- **Ver.0.88** (2026-11-26):
+  - **サウンド・BGMライフサイクル、ハイスコアCSV、ゲーム進行・UI・スクショ周りの不具合14点を一括修正 (`index.html`, `styles.css`, `js/app.js`, `js/bgm.js`, `js/sound.js`, `js/synth.js`, `js/puzzle.js`, `js/ui.js`, `js/data.js`, `README.md`)**:
+    - **初回ジェスチャBGM解放の空振りを防止 (`js/app.js`)**：修飾キー・`Escape`・`Tab` 等の非アクティベーションキーを除外し、`AudioContext` が実際に `running` へ遷移した場合のみ `titleBgmUnlocked` 確定・リスナー解除を行うよう修正（モバイルSafariでの `pointerdown` 空振り時も `touchend`/`click` で確実に解放）。
+    - **タブ非表示中の裏進行および裏タブSE再生・暴発を防止 (`js/app.js`, `js/sound.js`)**：`waitIfPaused()` / `pausableSleep()` / `gameLoop()` で `document.hidden` を待機条件へ追加し、`document.hidden` 中は `SoundEngine` の `init()` / `resume()` / `tone()` を抑止。
+    - **登戸発 快速 川崎行のBGM開始タイミング＆タイトル復帰時の残響混入を解消 (`js/app.js`, `js/bgm.js`)**：`bgm.playGame()` を発車準備（`playDepartureCushion`）開始時へ移動して接続待ち中の先行再生を防止。シンセバスとディレイ段の切替制御によりタイトル復帰時の残響混入を解消。
+    - **CSVインポートの空欄数値誤変換・`D` ランク混入・累計輸送人数不整合を修正 (`js/puzzle.js`)**：空文字を明示的に弾く `parseNonNegativeNumber()` を導入して空欄 `score` の0pt取込や空欄 `courseKey` の川崎駅（0番）誤加算を解消。`VALID_RANK_SET` から `'D'` を除外し、マージ後に `totalCarried` が駅別乗降合計を下回らないよう整合補正。
+    - **ゲームオーバー時の進行・乗車ログ整合 (`js/app.js`)**：かき分け降車で許容遅延超過時は座席ボーナス・減点演出を行わず即時運転中止へ遷移。満員積み残し時は発車確定後に `recordBoardedPassengers()` を実行し、未発車駅データの混入を防止。
+    - **UIレスポンシブ・スクショ品質・細部挙動の改善 (`index.html`, `styles.css`, `js/app.js`, `js/ui.js`, `js/synth.js`)**：`#modal-pause`・`#modal-sound`・`#modal-hs-delete-confirm` へ `max-h-[88dvh]`＋内部スクロールを追加。初回ロード時の Autoplay 警告回避、`UnisonFilterSynth.playNote()` の過去時刻クランプ補正、リザルトからの記録削除／初期化時の更新バナー同期、`CLEAR`/`GAMEOVER` タブ復帰時の音声復帰、スクショ撮影中の車窓停止＆降車アニメ中トークンの透明維持、全サブモーダルの背景クリック閉じ統一、`URL.revokeObjectURL` 猶予5秒化、未使用 `diffStyles.short` 整理を実施。
+
+- **Ver.0.87** (2026-11-26):
+  - **ハイスコア機能・SNSポスト機能・BGM機能を追加 (`js/synth.js`, `js/bgm.js`, `js/sound.js`, `js/data.js`, `js/puzzle.js`, `js/ui.js`, `js/app.js`, `index.html`, `styles.css`, `README.md`, `AGENTS.md`)**:
+    - **ハイスコア機能**：完走記録を `localStorage`（`nanbu_highscores_v1`、非対応時はメモリフォールバック）へ自動保存し、リザルト画面に記録更新・ランクインバナーを表示。3タブ別窓モーダル（総合TOP20＋チェックボックス個別／一括削除確認モーダル、シナリオ別全15列車TOP3、全26駅累計輸送実績）、ランク説明モーダル、および UTF-8 BOM 付き CSV 保存／マージ読込・記録初期化機能を追加。
+    - **SNSポスト機能**：リザルト画面に「📋 結果をコピー」（Clipboard API＋フォールバック・トースト＆完了表示）と「𝕏 ポストする」（`https://seasideexp.github.io/nanbu-line-puzzle/` および `#NanbuL_Puzzle` 付き Web Intent）を追加し、`index.html` に OGP メタタグを設定。
+    - **BGM機能**：外部音源不要の Web Audio API リアルタイムシンセ（`js/synth.js` `window.NanbuSynth`）＆2モードBGMシーケンサー（`js/bgm.js` `window.NanbuBgm`、タイトル 84 BPM 軽量モード／走行中 104 BPM ユニゾンシンセ・発車SE回避の1.3秒開始遅延）を追加。`SoundEngine` と単一 `AudioContext` を共有し、SE（既定100%）・BGM（既定10%）・全体ミュートの個別調整モーダル（`nanbu_audio_settings_v1` 永続化）、自動再生制限時の案内＆初回ジェスチャ解放、一時停止・タブ非表示・リザルト画面とのライフサイクル連動を実装。
+
 - **Ver.0.86** (2026-11-25):
   - **降車・乗車演出中の下部「次駅降車」カウンターおよび車内人数表示をリアルタイム更新化 (`js/app.js`, `js/data.js`, `index.html`, `README.md`)**:
     - 降車演出（スムーズ降車・かき分け降車）中に1組降車するたび `refreshReachability()` と `UI.updateHUD()` を実行し、下部バーの `次駅降車 / OK / !詰` カウンターおよび `車内 XX/40` が0人までリアルタイムに減算されるよう改善（終点クリア時も `0人 / OK 0 / !詰 0` へ確定）。

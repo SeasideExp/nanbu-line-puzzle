@@ -687,3 +687,19 @@ body {
 .is-capturing .passenger.is-target {
   box-shadow: 0 0 0 2px #ffffff, 0 0 10px 2px rgba(250, 204, 21, 0.95), 0 2px 0 rgba(15, 23, 42, 0.22);
 }
+
+.is-capturing .passenger.anim-alight-ok,
+.is-capturing .passenger.anim-alight-blocked {
+  opacity: 0 !important;
+}
+
+
+/* 最高評価SSバッジ装飾（ハイスコア一覧・ランク説明用） */
+.rank-ss-badge {
+  background: linear-gradient(135deg, rgba(254, 240, 138, 0.28) 0%, rgba(245, 158, 11, 0.38) 55%, rgba(251, 191, 36, 0.24) 100%);
+  border-color: rgba(253, 224, 71, 0.9);
+  color: #fef08a;
+  font-weight: 900;
+  text-shadow: 0 0 6px rgba(253, 224, 71, 0.75);
+  box-shadow: 0 0 10px rgba(251, 191, 36, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.4);
+}

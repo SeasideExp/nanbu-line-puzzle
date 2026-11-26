@@ -5,9 +5,26 @@
 (function (global) {
   'use strict';
 
-  const { BOARD_CONFIG, STATIONS, DIRECTIONS, OD_MODES, DIFFICULTIES, RAPID_CONNECTIONS } = global.NanbuData;
+  const {
+    BOARD_CONFIG,
+    STATIONS,
+    DIRECTIONS,
+    OD_MODES,
+    DIFFICULTIES,
+    RAPID_CONNECTIONS,
+    SHARE_GAME_URL,
+    SHARE_HASHTAG,
+    TRAIN_ORDER,
+  } = global.NanbuData;
   const { ROWS, COLS, MAX_CAPACITY, MAX_DELAY_SEC } = BOARD_CONFIG;
   const Puzzle = global.NanbuPuzzle;
+
+  const HS_MOD_META = {
+    doorJizo: { icon: '🗿', name: 'ドア前地蔵' },
+    g1Event:  { icon: '🏇', name: 'G1開催' },
+    stroller: { icon: '👶', name: 'ベビーカー' },
+    elderly:  { icon: '👴', name: '御老人' },
+  };
 
   function cacheElements() {
     return {
@@ -128,6 +145,50 @@
       detailPanelOdList: document.getElementById('detail-panel-od-list'),
       detailPanelOdHeatmap: document.getElementById('detail-panel-od-heatmap'),
       detailPanelScoreDetail: document.getElementById('detail-panel-score-detail'),
+
+      // BGM・音量設定UI
+      titleBgmHint: document.getElementById('title-bgm-hint'),
+      btnTitleBgmHint: document.getElementById('btn-title-bgm-hint'),
+      btnOpenSoundTitle: document.getElementById('btn-open-sound-title'),
+      btnOpenSoundPause: document.getElementById('btn-open-sound-pause'),
+      modalSound: document.getElementById('modal-sound'),
+      btnCloseSound: document.getElementById('btn-close-sound'),
+      sliderSeVolume: document.getElementById('slider-se-volume'),
+      labelSeVolume: document.getElementById('label-se-volume'),
+      sliderBgmVolume: document.getElementById('slider-bgm-volume'),
+      labelBgmVolume: document.getElementById('label-bgm-volume'),
+      btnSoundMuteToggle: document.getElementById('btn-sound-mute-toggle'),
+      btnSoundReset: document.getElementById('btn-sound-reset'),
+
+      // リザルト記録更新バナー ＆ SNSシェア
+      resRecordBanner: document.getElementById('res-record-banner'),
+      btnResultHighscore: document.getElementById('btn-result-highscore'),
+      btnResultShareCopy: document.getElementById('btn-result-share-copy'),
+      btnResultShareX: document.getElementById('btn-result-share-x'),
+
+      // ハイスコア・ランク説明・選択削除モーダル
+      btnOpenHighscore: document.getElementById('btn-open-highscore'),
+      modalHighscore: document.getElementById('modal-highscore'),
+      btnCloseHighscore: document.getElementById('btn-close-highscore'),
+      btnOpenRankHelp: document.getElementById('btn-open-rank-help'),
+      modalRankHelp: document.getElementById('modal-rank-help'),
+      btnCloseRankHelp: document.getElementById('btn-close-rank-help'),
+      hsPanelOverall: document.getElementById('hs-panel-overall'),
+      hsOverallList: document.getElementById('hs-overall-list'),
+      hsOverallActions: document.getElementById('hs-overall-actions'),
+      btnHsSelectAll: document.getElementById('btn-hs-select-all'),
+      hsSelectedCount: document.getElementById('hs-selected-count'),
+      btnHsDeleteSelected: document.getElementById('btn-hs-delete-selected'),
+      hsPanelCourses: document.getElementById('hs-panel-courses'),
+      hsPanelStats: document.getElementById('hs-panel-stats'),
+      btnHsExport: document.getElementById('btn-hs-export'),
+      btnHsImport: document.getElementById('btn-hs-import'),
+      inputHsCsv: document.getElementById('input-hs-csv'),
+      btnHsClear: document.getElementById('btn-hs-clear'),
+      modalHsDeleteConfirm: document.getElementById('modal-hs-delete-confirm'),
+      hsDeleteConfirmMsg: document.getElementById('hs-delete-confirm-msg'),
+      btnCancelHsDelete: document.getElementById('btn-cancel-hs-delete'),
+      btnConfirmHsDelete: document.getElementById('btn-confirm-hs-delete'),
     };
   }
 
@@ -363,10 +424,10 @@
 
     // 現在の難易度バッジ＆有効な追加設定アイコン
     const diffStyles = {
-      turtle:   { full: '🐢 亀',      short: '🐢亀',    cls: 'border-teal-500/40 bg-teal-500/15 text-teal-300' },
-      easy:     { full: 'のんびり',   short: 'のんびり', cls: 'border-emerald-500/40 bg-emerald-500/15 text-emerald-300' },
-      normal:   { full: '標準ダイヤ', short: '標準',     cls: 'border-yellow-400/50 bg-yellow-400/15 text-yellow-300' },
-      recovery: { full: '回復運転',   short: '回復',     cls: 'border-rose-500/50 bg-rose-500/15 text-rose-300' },
+      turtle:   { full: '🐢 亀',      cls: 'border-teal-500/40 bg-teal-500/15 text-teal-300' },
+      easy:     { full: 'のんびり',   cls: 'border-emerald-500/40 bg-emerald-500/15 text-emerald-300' },
+      normal:   { full: '標準ダイヤ', cls: 'border-yellow-400/50 bg-yellow-400/15 text-yellow-300' },
+      recovery: { full: '回復運転',   cls: 'border-rose-500/50 bg-rose-500/15 text-rose-300' },
     };
     const diffStyle = diffStyles[state.diffKey] || diffStyles.normal;
     if (el.hudDiffBadge) {
@@ -515,6 +576,39 @@
     el.resDelay.textContent = Puzzle.formatMinSec(state.delaySec);
     el.resSmooth.textContent = `${smoothRate}% (${state.smoothAlighted}/${state.totalAlighted})`;
     el.resChain.textContent = `${state.maxChain}人`;
+
+    // ハイスコア更新・ランクインバナー描画
+    if (el.resRecordBanner) {
+      const hs = isClear ? state.highScoreResult : null;
+      let bannerMsg = '';
+      if (hs) {
+        if (hs.isNewOverallBest && hs.isNewCourseBest) {
+          bannerMsg = '👑 総合ランキング1位 & シナリオ自己ベスト更新！';
+        } else if (hs.isNewCourseBest && hs.overallRank) {
+          bannerMsg = `🏆 シナリオ自己ベスト更新！（総合 ${hs.overallRank}位）`;
+        } else if (hs.isNewCourseBest) {
+          bannerMsg = '🏆 シナリオ自己ベスト更新！（1位）';
+        } else if (hs.overallRank && hs.courseRank) {
+          bannerMsg = `✨ 総合 ${hs.overallRank}位 & シナリオ ${hs.courseRank}位 ランクイン！`;
+        } else if (hs.overallRank) {
+          bannerMsg = `✨ 総合ランキング ${hs.overallRank}位 ランクイン！`;
+        } else if (hs.courseRank) {
+          bannerMsg = `✨ シナリオランキング ${hs.courseRank}位 ランクイン！`;
+        }
+      }
+      el.resRecordBanner.textContent = bannerMsg;
+      el.resRecordBanner.classList.toggle('hidden', !bannerMsg);
+    }
+
+    // SNSシェア文言生成 & Xポストリンク更新
+    const shareText = buildResultShareText(state, isClear);
+    state.latestShareText = shareText;
+    if (el.btnResultShareX) {
+      el.btnResultShareX.href = `https://x.com/intent/tweet?text=${encodeURIComponent(shareText)}`;
+    }
+    if (el.btnResultShareCopy) {
+      el.btnResultShareCopy.innerHTML = '<span>📋</span><span>結果をコピー</span>';
+    }
 
     // 選択した列車・難易度・追加難易度設定のメタ情報表示
     const startSt = STATIONS[state.startStationIdx];
@@ -1139,6 +1233,290 @@
     if (el.doorsPlatformWrap) el.doorsPlatformWrap.style.width = widthStr;
   }
 
+  /* -------------------------------------------------------------------------
+   * SNSシェア文言生成
+   * ------------------------------------------------------------------------- */
+  function buildResultShareText(state, isClear) {
+    const trainKey = Puzzle.getTrainKey(state.direction, state.courseKey);
+    const routeLabel = Puzzle.formatTrainDisplayName(trainKey);
+    const diff = DIFFICULTIES[state.diffKey] || DIFFICULTIES.normal;
+    const smoothRate = Puzzle.calcSmoothRate(state.smoothAlighted, state.totalAlighted);
+    const evalInfo = isClear
+      ? Puzzle.evaluateClearRank(state.delaySec, smoothRate)
+      : { rank: 'D' };
+    const multInfo = Puzzle.calcScoreMultiplier(state.diffKey, {
+      doorJizo: state.doorJizo,
+      g1Active: state.g1Active,
+      stroller: state.stroller,
+      elderly: state.elderly,
+    });
+
+    const mods = [];
+    if (state.doorJizo) mods.push('🗿ドア前地蔵');
+    if (state.g1Active) mods.push('🏇G1開催');
+    if (state.stroller) mods.push('👶ベビーカー');
+    if (state.elderly) mods.push('👴御老人');
+    const modText = mods.length > 0 ? mods.join('＋') : '追加設定なし';
+
+    const statusText = isClear ? '完走！' : '運転中止';
+    const url = SHARE_GAME_URL || 'https://seasideexp.github.io/nanbu-line-puzzle/';
+    const tag = SHARE_HASHTAG || '#NanbuL_Puzzle';
+
+    return [
+      `【なぜ混んでる？】${routeLabel} ${statusText}`,
+      `運行評価：${evalInfo.rank} / 最終スコア：${Number(state.score || 0).toLocaleString()} pt / 遅延 ${Puzzle.formatMinSec(state.delaySec)}（スムーズ降車率 ${smoothRate}%）`,
+      `条件：${diff.label}（倍率 ×${multInfo.totalMult.toFixed(2)}） / ${modText}`,
+      url,
+      `${tag} #ブラウザゲーム`,
+    ].join('\n');
+  }
+
+  /* -------------------------------------------------------------------------
+   * ハイスコアモーダル描画（総合TOP20 / シナリオ別15列車 / 輸送実績26駅）
+   * ------------------------------------------------------------------------- */
+  function formatRecordDate(isoStr) {
+    if (!isoStr) return '';
+    const d = new Date(isoStr);
+    if (Number.isNaN(d.getTime())) return '';
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    return `${yyyy}/${mm}/${dd}`;
+  }
+
+  function getRankBadgeColor(rank) {
+    if (rank === 'SS') return 'rank-ss-badge';
+    if (rank === 'S') return 'bg-amber-400/20 border-amber-400/70 text-amber-300';
+    if (rank === 'A') return 'bg-emerald-500/20 border-emerald-400/60 text-emerald-300';
+    if (rank === 'B') return 'bg-sky-500/20 border-sky-400/60 text-sky-300';
+    if (rank === 'C') return 'bg-slate-800 border-slate-600 text-slate-300';
+    return 'bg-slate-800 border-rose-500/50 text-rose-400';
+  }
+
+  function formatModsIcons(mods) {
+    if (!Array.isArray(mods) || mods.length === 0) return '追加なし';
+    return mods
+      .map((k) => {
+        const m = HS_MOD_META[k];
+        return m ? `<span title="${m.name}">${m.icon}</span>` : '';
+      })
+      .join('');
+  }
+
+  function syncHighScoreSelectionUI(el) {
+    if (!el) return;
+    const container = el.hsOverallList || el.hsPanelOverall;
+    const checks = container ? Array.from(container.querySelectorAll('.hs-overall-check')) : [];
+    const checkedCount = checks.filter((c) => c.checked).length;
+    if (el.hsSelectedCount) {
+      el.hsSelectedCount.textContent = `選択中: ${checkedCount}件`;
+      el.hsSelectedCount.className =
+        checkedCount > 0
+          ? 'text-[11px] font-black text-rose-300 tabular-nums'
+          : 'text-[11px] font-bold text-slate-400 tabular-nums';
+    }
+    if (el.btnHsSelectAll) {
+      const allSelected = checks.length > 0 && checkedCount === checks.length;
+      el.btnHsSelectAll.textContent = allSelected ? '☐ すべて解除' : '☑ すべて選択';
+    }
+    if (el.btnHsDeleteSelected) {
+      el.btnHsDeleteSelected.disabled = checkedCount === 0;
+    }
+  }
+
+  function renderHighScoreModal(el, store, highlightTrainKey = null) {
+    if (!el || !store) return;
+
+    const listTarget = el.hsOverallList || el.hsPanelOverall;
+    if (listTarget) {
+      const list = Array.isArray(store.overall) ? store.overall : [];
+      if (el.hsOverallActions) {
+        el.hsOverallActions.classList.toggle('hidden', list.length === 0);
+      }
+      if (list.length === 0) {
+        listTarget.innerHTML =
+          '<div class="bg-slate-950/70 border border-slate-800 rounded-xl p-6 text-center text-xs text-slate-400">まだ完走スコアが記録されていません。<br>終点まで完走すると上位20件がここに保存されます。</div>';
+      } else {
+        listTarget.innerHTML = list
+          .map((rec, idx) => {
+            const pos = idx + 1;
+            const posLabel = pos === 1 ? '🥇' : pos === 2 ? '🥈' : pos === 3 ? '🥉' : `${pos}`;
+            const posCls =
+              pos === 1
+                ? 'bg-amber-400/25 border-amber-400 text-amber-300'
+                : pos === 2
+                  ? 'bg-slate-300/20 border-slate-300 text-slate-200'
+                  : pos === 3
+                    ? 'bg-orange-500/20 border-orange-400 text-orange-300'
+                    : 'bg-slate-800 border-slate-700 text-slate-400';
+            const diff = DIFFICULTIES[rec.diffKey] || DIFFICULTIES.normal;
+            const courseLabel = Puzzle.formatTrainDisplayName(rec.courseKey);
+            const isCurrent = highlightTrainKey && rec.courseKey === highlightTrainKey;
+            const encodedKey = encodeURIComponent(Puzzle.getScoreRecordKey(rec));
+            return `
+              <div class="bg-slate-950/80 border ${isCurrent ? 'border-yellow-400/60' : 'border-slate-800'} rounded-xl px-3 py-2 flex items-center gap-2.5">
+                <div class="shrink-0 w-7 h-7 rounded-lg border flex items-center justify-center text-xs font-black tabular-nums ${posCls}">${posLabel}</div>
+                <div class="min-w-0 flex-1">
+                  <div class="flex flex-wrap items-center gap-1.5">
+                    <span class="px-1.5 py-0.5 rounded border text-[10px] font-black leading-none ${getRankBadgeColor(rec.rank)}">${rec.rank}</span>
+                    <span class="text-xs font-black text-white truncate">${courseLabel}</span>
+                  </div>
+                  <div class="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] text-slate-400 mt-0.5">
+                    <span>${diff.label}</span>
+                    <span>${formatModsIcons(rec.mods)}</span>
+                    <span class="tabular-nums">遅延 ${Puzzle.formatMinSec(rec.delaySec)} / スムーズ ${rec.smoothRate}%</span>
+                    <span class="tabular-nums text-slate-500">${formatRecordDate(rec.achievedAt)}</span>
+                  </div>
+                </div>
+                <div class="shrink-0 text-right">
+                  <div class="text-sm sm:text-base font-black text-yellow-300 tabular-nums">${Number(rec.score).toLocaleString()}</div>
+                  <div class="text-[9px] text-slate-400 font-bold leading-none">pt</div>
+                </div>
+                <label class="shrink-0 pl-1 flex items-center justify-center cursor-pointer select-none" title="削除対象として選択">
+                  <input type="checkbox" class="hs-overall-check w-4 h-4 accent-rose-500 rounded cursor-pointer" value="${encodedKey}" />
+                </label>
+              </div>
+            `;
+          })
+          .join('');
+      }
+      syncHighScoreSelectionUI(el);
+    }
+
+    if (el.hsPanelCourses) {
+      const byCourse = store.byCourse || {};
+      const keys = Array.isArray(TRAIN_ORDER) ? TRAIN_ORDER : [];
+      el.hsPanelCourses.innerHTML = keys
+        .map((trainKey) => {
+          const parsed = Puzzle.parseTrainKey(trainKey);
+          if (!parsed) return '';
+          const records = Array.isArray(byCourse[trainKey]) ? byCourse[trainKey] : [];
+          const isCurrent = highlightTrainKey && trainKey === highlightTrainKey;
+          const dirTag = parsed.dirKey === 'down'
+            ? '<span class="shrink-0 px-1 py-0.5 rounded bg-yellow-400/15 border border-yellow-400/40 text-[9px] font-black text-yellow-300">下り</span>'
+            : '<span class="shrink-0 px-1 py-0.5 rounded bg-sky-400/15 border border-sky-400/40 text-[9px] font-black text-sky-300">上り</span>';
+          const rowsHtml =
+            records.length === 0
+              ? '<div class="text-[10.5px] text-slate-500 py-1.5 text-center">記録なし</div>'
+              : records
+                  .map((rec, idx) => {
+                    const diff = DIFFICULTIES[rec.diffKey] || DIFFICULTIES.normal;
+                    return `
+                      <div class="flex items-center justify-between gap-2 text-[11px] border-t border-slate-800/80 pt-1 mt-1 first:border-t-0 first:pt-0 first:mt-0">
+                        <div class="min-w-0 flex items-center gap-1.5">
+                          <span class="w-4 text-center font-black ${idx === 0 ? 'text-amber-300' : 'text-slate-400'} tabular-nums">${idx + 1}.</span>
+                          <span class="px-1 py-0.5 rounded border text-[9px] font-black leading-none ${getRankBadgeColor(rec.rank)}">${rec.rank}</span>
+                          <div class="min-w-0 flex flex-col leading-tight">
+                            <span class="text-[10px] text-slate-300 truncate">${diff.label} ${formatModsIcons(rec.mods)}</span>
+                            <span class="text-[9px] text-slate-500 tabular-nums">${formatRecordDate(rec.achievedAt)}</span>
+                          </div>
+                        </div>
+                        <div class="shrink-0 text-right">
+                          <span class="font-black text-yellow-300 tabular-nums">${Number(rec.score).toLocaleString()}</span>
+                          <span class="text-[9px] text-slate-400">pt</span>
+                        </div>
+                      </div>
+                    `;
+                  })
+                  .join('');
+
+          return `
+            <div class="bg-slate-950/80 border ${isCurrent ? 'border-yellow-400/60' : 'border-slate-800'} rounded-xl p-2.5 flex flex-col gap-1.5">
+              <div class="flex items-center justify-between gap-1.5">
+                <span class="text-xs font-black text-white truncate">${Puzzle.formatTrainDisplayName(trainKey)}</span>
+                ${dirTag}
+              </div>
+              <div>${rowsHtml}</div>
+            </div>
+          `;
+        })
+        .join('');
+    }
+
+    if (el.hsPanelStats) {
+      const stats = store.stats || {
+        totalRuns: 0,
+        totalCarried: 0,
+        stationBoarded: [],
+        stationAlighted: [],
+      };
+      const totalRuns = Number(stats.totalRuns) || 0;
+      const totalCarried = Number(stats.totalCarried) || 0;
+      const avgCarried = totalRuns > 0 ? Math.round(totalCarried / totalRuns) : 0;
+
+      const buildStationRankingCard = (title, countsArr, barCls, accentCls) => {
+        const ranked = STATIONS
+          .map((st, idx) => ({
+            idx,
+            st,
+            count: Number(countsArr && countsArr[idx]) || 0,
+          }))
+          .sort((a, b) => (b.count !== a.count ? b.count - a.count : a.idx - b.idx));
+
+        const maxVal = Math.max(1, ranked[0] ? ranked[0].count : 0);
+        const rowsHtml = ranked
+          .map((item, rankIdx) => {
+            const rankNum = rankIdx + 1;
+            const pct = item.count > 0 ? Math.max(4, Math.round((item.count / maxVal) * 100)) : 0;
+            const rankBadgeCls =
+              rankNum === 1 && item.count > 0
+                ? 'text-amber-300'
+                : rankNum <= 3 && item.count > 0
+                  ? 'text-slate-200'
+                  : 'text-slate-500';
+            return `
+              <div class="flex items-center gap-2 text-[11px] py-1 border-t border-slate-800/70 first:border-t-0">
+                <span class="w-5 text-right font-black tabular-nums ${rankBadgeCls}">${rankNum}</span>
+                <span class="w-2 h-2 rounded-full shrink-0" style="background:${item.st.bg}"></span>
+                <div class="min-w-0 flex-1">
+                  <div class="flex items-center justify-between gap-2">
+                    <span class="font-bold text-slate-200 truncate"><span class="text-[9.5px] text-slate-400 mr-1 tabular-nums">${item.st.num}</span>${item.st.name}</span>
+                    <span class="font-black tabular-nums ${item.count > 0 ? accentCls : 'text-slate-500'}">${item.count.toLocaleString()}人</span>
+                  </div>
+                  <div class="w-full h-1 bg-slate-800 rounded-full overflow-hidden mt-0.5">
+                    <div class="h-full ${barCls}" style="width:${pct}%"></div>
+                  </div>
+                </div>
+              </div>
+            `;
+          })
+          .join('');
+
+        return `
+          <div class="bg-slate-950/80 border border-slate-800 rounded-xl p-3 flex flex-col gap-1.5">
+            <div class="text-xs font-black text-white border-b border-slate-800 pb-1.5">${title}</div>
+            <div class="flex flex-col">${rowsHtml}</div>
+          </div>
+        `;
+      };
+
+      el.hsPanelStats.innerHTML = `
+        <div class="bg-slate-950/85 border border-yellow-400/40 rounded-xl p-3.5 flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <div class="text-[11px] font-bold text-slate-400">これまでに運んだ人数（完走累計）</div>
+            <div class="text-2xl sm:text-3xl font-black text-yellow-300 tabular-nums mt-0.5">
+              ${totalCarried.toLocaleString()}<span class="text-sm text-slate-200 ml-1">人</span>
+            </div>
+          </div>
+          <div class="flex items-center gap-3 text-right">
+            <div class="bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1.5">
+              <div class="text-[9.5px] font-bold text-slate-400">完走回数</div>
+              <div class="text-sm font-black text-white tabular-nums">${totalRuns.toLocaleString()}回</div>
+            </div>
+            <div class="bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1.5">
+              <div class="text-[9.5px] font-bold text-slate-400">1運行平均</div>
+              <div class="text-sm font-black text-sky-300 tabular-nums">${avgCarried.toLocaleString()}人</div>
+            </div>
+          </div>
+        </div>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+          ${buildStationRankingCard('🟢 載せた人数ランキング（全26駅）', stats.stationBoarded, 'bg-emerald-400', 'text-emerald-300')}
+          ${buildStationRankingCard('🔵 降りた人数ランキング（全26駅）', stats.stationAlighted, 'bg-sky-400', 'text-sky-300')}
+        </div>
+      `;
+    }
+  }
+
   global.NanbuUI = {
     cacheElements,
     initGridDOM,
@@ -1155,6 +1533,9 @@
     updateTimerUI,
     updateFastForwardHint,
     renderResultModal,
+    buildResultShareText,
+    renderHighScoreModal,
+    syncHighScoreSelectionUI,
     buildDataTable,
   };
 })(window);

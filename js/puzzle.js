@@ -23,10 +23,14 @@
     PRIORITY_SPACES,
     STROLLER_CONFIG,
     ELDERLY_CONFIG,
+    HIGHSCORE_CONFIG,
+    TRAIN_ORDER,
   } = global.NanbuData;
   const { ROWS, COLS, MAX_CAPACITY, PEAK_TARGET, DOOR_CELLS } = BOARD_CONFIG;
   const STATION_COUNT = STATIONS.length;
+  const STATS_STATION_COUNT = STATIONS.length;
   const RAPID_STOP_SET = new Set(RAPID_STOPS);
+  const VALID_TRAIN_SET = new Set(Array.isArray(TRAIN_ORDER) ? TRAIN_ORDER : []);
 
   function createEmptyGrid() {
     return Array.from({ length: ROWS }, () => Array(COLS).fill(null));
@@ -1050,6 +1054,11 @@
     return 0;
   }
 
+  function calcSmoothRate(smoothAlighted, totalAlighted) {
+    if (!totalAlighted || totalAlighted <= 0) return 100;
+    return Math.max(0, Math.min(100, Math.round((smoothAlighted / totalAlighted) * 100)));
+  }
+
   function evaluateClearRank(delaySec, smoothRate) {
     if (delaySec <= 0 && smoothRate >= 98) {
       return { rank: 'SS', rankColor: 'text-amber-300' };
@@ -1064,6 +1073,578 @@
       return { rank: 'B', rankColor: 'text-sky-400' };
     }
     return { rank: 'C', rankColor: 'text-slate-300' };
+  }
+
+  /* -------------------------------------------------------------------------
+   * 列車キー（`${dirKey}:${courseKey}`）ユーティリティ
+   * ------------------------------------------------------------------------- */
+  function getTrainKey(dirKey, courseKey) {
+    return `${dirKey}:${courseKey}`;
+  }
+
+  function parseTrainKey(trainKey) {
+    const str = typeof trainKey === 'string' ? trainKey.trim() : '';
+    const idx = str.indexOf(':');
+    if (idx <= 0) return null;
+    const dirKey = str.slice(0, idx);
+    const courseKey = str.slice(idx + 1);
+    if (!DIRECTIONS[dirKey] || !COURSES[courseKey]) return null;
+    if (VALID_TRAIN_SET.size > 0 && !VALID_TRAIN_SET.has(str)) return null;
+    return { dirKey, courseKey, trainKey: str };
+  }
+
+  function formatTrainDisplayName(trainKey) {
+    const parsed = parseTrainKey(trainKey);
+    if (!parsed) return String(trainKey || '');
+    const { dirKey, courseKey } = parsed;
+    const course = COURSES[courseKey];
+    const stops = getRouteStops(courseKey, dirKey);
+    const startSt = STATIONS[stops[0]];
+    const endSt = STATIONS[stops[stops.length - 1]];
+    const typeStr = course && course.isRapid ? '快速' : '各停';
+    let suffix = '';
+    if (courseKey === 'rapid_inagi') suffix = '・立川連絡';
+    else if (courseKey === 'nishikunitachi') suffix = '・朝ラッシュ';
+    else if (courseKey === 'tachikawa_nakahara') suffix = '・終電間際';
+    else if (courseKey === 'rapid_noborito') suffix = '・各停連絡';
+    return `${typeStr} ${startSt ? startSt.name : ''}→${endSt ? endSt.name : ''}${suffix}`;
+  }
+
+  /* -------------------------------------------------------------------------
+   * ハイスコア記録・ランキング管理・CSVセーブ／ロード
+   * ------------------------------------------------------------------------- */
+  const VALID_RANK_SET = new Set(['SS', 'S', 'A', 'B', 'C']);
+  const VALID_MOD_ORDER = ['doorJizo', 'g1Event', 'stroller', 'elderly'];
+  let memoryHighScoreStore = null;
+
+  function parseNonNegativeNumber(val) {
+    if (val === null || val === undefined) return NaN;
+    if (typeof val === 'string' && val.trim() === '') return NaN;
+    const num = Number(val);
+    return Number.isFinite(num) && num >= 0 ? num : NaN;
+  }
+
+  function createEmptyStats() {
+    return {
+      totalRuns: 0,
+      totalCarried: 0,
+      stationBoarded: Array(STATS_STATION_COUNT).fill(0),
+      stationAlighted: Array(STATS_STATION_COUNT).fill(0),
+    };
+  }
+
+  function sanitizeStats(rawStats) {
+    const stats = createEmptyStats();
+    if (!rawStats || typeof rawStats !== 'object') return stats;
+    const runsNum = Number(rawStats.totalRuns);
+    const carriedNum = Number(rawStats.totalCarried);
+    stats.totalRuns = Number.isFinite(runsNum) && runsNum >= 0 ? Math.round(runsNum) : 0;
+    stats.totalCarried = Number.isFinite(carriedNum) && carriedNum >= 0 ? Math.round(carriedNum) : 0;
+
+    if (Array.isArray(rawStats.stationBoarded)) {
+      for (let i = 0; i < STATS_STATION_COUNT; i++) {
+        const v = Number(rawStats.stationBoarded[i]);
+        stats.stationBoarded[i] = Number.isFinite(v) && v >= 0 ? Math.round(v) : 0;
+      }
+    }
+    if (Array.isArray(rawStats.stationAlighted)) {
+      for (let i = 0; i < STATS_STATION_COUNT; i++) {
+        const v = Number(rawStats.stationAlighted[i]);
+        stats.stationAlighted[i] = Number.isFinite(v) && v >= 0 ? Math.round(v) : 0;
+      }
+    }
+    return stats;
+  }
+
+  function createEmptyHighScoreStore() {
+    return { version: 1, overall: [], byCourse: {}, stats: createEmptyStats() };
+  }
+
+  function normalizeScoreRecord(raw) {
+    if (!raw || typeof raw !== 'object') return null;
+    const courseKey = typeof raw.courseKey === 'string' ? raw.courseKey.trim() : '';
+    if (!parseTrainKey(courseKey)) return null;
+
+    const scoreNum = parseNonNegativeNumber(raw.score);
+    if (!Number.isFinite(scoreNum)) return null;
+    const score = Math.round(scoreNum);
+
+    const hasRawRank = typeof raw.rank === 'string' && raw.rank.trim() !== '';
+    const rankStr = hasRawRank ? raw.rank.trim().toUpperCase() : 'C';
+    if (hasRawRank && !VALID_RANK_SET.has(rankStr)) return null;
+    const rank = VALID_RANK_SET.has(rankStr) ? rankStr : 'C';
+
+    const diffRaw = typeof raw.diffKey === 'string' ? raw.diffKey.trim() : 'normal';
+    const diffKey = DIFFICULTIES[diffRaw] ? diffRaw : 'normal';
+
+    let modsArr = [];
+    if (Array.isArray(raw.mods)) {
+      modsArr = raw.mods;
+    } else if (typeof raw.mods === 'string' && raw.mods.trim()) {
+      modsArr = raw.mods.split(/[+|;,]/);
+    }
+    const modSet = new Set(
+      modsArr.map((m) => String(m || '').trim()).filter((m) => VALID_MOD_ORDER.includes(m))
+    );
+    const mods = VALID_MOD_ORDER.filter((m) => modSet.has(m));
+
+    const delayNum = parseNonNegativeNumber(raw.delaySec);
+    const delaySec = Number.isFinite(delayNum) ? Math.round(delayNum) : 0;
+
+    const smoothNum = parseNonNegativeNumber(raw.smoothRate);
+    const smoothRate = Number.isFinite(smoothNum)
+      ? Math.max(0, Math.min(100, Math.round(smoothNum)))
+      : 100;
+
+    let achievedAt = '';
+    if (typeof raw.achievedAt === 'string' && raw.achievedAt.trim()) {
+      const parsed = Date.parse(raw.achievedAt.trim());
+      if (!Number.isNaN(parsed)) {
+        achievedAt = new Date(parsed).toISOString();
+      }
+    }
+
+    return {
+      courseKey,
+      score,
+      rank,
+      diffKey,
+      mods,
+      delaySec,
+      smoothRate,
+      achievedAt,
+    };
+  }
+
+  function scoreRecordKey(rec) {
+    return `${rec.courseKey}|${rec.score}|${rec.rank}|${rec.diffKey}|${(rec.mods || []).join('+')}|${rec.delaySec}|${rec.smoothRate}|${rec.achievedAt}`;
+  }
+
+  function compareScoreRecords(a, b) {
+    if (b.score !== a.score) return b.score - a.score;
+    if (a.delaySec !== b.delaySec) return a.delaySec - b.delaySec;
+    if (b.smoothRate !== a.smoothRate) return b.smoothRate - a.smoothRate;
+    return String(b.achievedAt || '').localeCompare(String(a.achievedAt || ''));
+  }
+
+  function dedupeAndSortRecords(list, limit) {
+    const map = new Map();
+    for (const item of list || []) {
+      const rec = normalizeScoreRecord(item);
+      if (!rec) continue;
+      const key = scoreRecordKey(rec);
+      if (!map.has(key)) map.set(key, rec);
+    }
+    return Array.from(map.values()).sort(compareScoreRecords).slice(0, limit);
+  }
+
+  function sanitizeHighScoreStore(rawStore) {
+    const maxOverall = (HIGHSCORE_CONFIG && HIGHSCORE_CONFIG.maxOverall) || 20;
+    const maxPerCourse = (HIGHSCORE_CONFIG && HIGHSCORE_CONFIG.maxPerCourse) || 3;
+    const store = createEmptyHighScoreStore();
+    if (!rawStore || typeof rawStore !== 'object') return store;
+
+    store.overall = dedupeAndSortRecords(rawStore.overall, maxOverall);
+    if (rawStore.byCourse && typeof rawStore.byCourse === 'object') {
+      Object.keys(rawStore.byCourse).forEach((courseKey) => {
+        if (!parseTrainKey(courseKey)) return;
+        const cleaned = dedupeAndSortRecords(rawStore.byCourse[courseKey], maxPerCourse);
+        if (cleaned.length > 0) {
+          store.byCourse[courseKey] = cleaned;
+        }
+      });
+    }
+    store.stats = sanitizeStats(rawStore.stats);
+    return store;
+  }
+
+  function loadHighScores() {
+    try {
+      const key = (HIGHSCORE_CONFIG && HIGHSCORE_CONFIG.storageKey) || 'nanbu_highscores_v1';
+      const raw = global.localStorage ? global.localStorage.getItem(key) : null;
+      if (raw) {
+        const parsed = sanitizeHighScoreStore(JSON.parse(raw));
+        memoryHighScoreStore = parsed;
+        return parsed;
+      }
+    } catch (_e) {
+      // localStorage利用不可時はメモリフォールバックを使用
+    }
+    return sanitizeHighScoreStore(memoryHighScoreStore);
+  }
+
+  function saveHighScores(store) {
+    const sanitized = sanitizeHighScoreStore(store);
+    memoryHighScoreStore = sanitized;
+    try {
+      const key = (HIGHSCORE_CONFIG && HIGHSCORE_CONFIG.storageKey) || 'nanbu_highscores_v1';
+      if (global.localStorage) {
+        global.localStorage.setItem(key, JSON.stringify(sanitized));
+      }
+    } catch (_e) {
+      // 容量不足・プライベートモード等の書込例外時は無視
+    }
+    return sanitized;
+  }
+
+  function recordHighScore(rawRecord, passengerLog = []) {
+    const rec = normalizeScoreRecord(rawRecord);
+    const store = loadHighScores();
+    if (!rec) {
+      return {
+        store,
+        record: null,
+        overallRank: null,
+        courseRank: null,
+        isNewOverallBest: false,
+        isNewCourseBest: false,
+      };
+    }
+
+    const prevCourseBest =
+      store.byCourse[rec.courseKey] && store.byCourse[rec.courseKey][0]
+        ? store.byCourse[rec.courseKey][0].score
+        : -1;
+    const prevOverallBest = store.overall[0] ? store.overall[0].score : -1;
+
+    const maxOverall = (HIGHSCORE_CONFIG && HIGHSCORE_CONFIG.maxOverall) || 20;
+    const maxPerCourse = (HIGHSCORE_CONFIG && HIGHSCORE_CONFIG.maxPerCourse) || 3;
+
+    const nextOverall = dedupeAndSortRecords([...store.overall, rec], maxOverall);
+    const prevCourseList = store.byCourse[rec.courseKey] || [];
+    const nextCourseList = dedupeAndSortRecords([...prevCourseList, rec], maxPerCourse);
+
+    store.overall = nextOverall;
+    store.byCourse[rec.courseKey] = nextCourseList;
+
+    // 完走時の累計輸送人数・全26駅乗降統計を加算
+    const stats = sanitizeStats(store.stats);
+    stats.totalRuns += 1;
+    let carriedThisRun = 0;
+    if (Array.isArray(passengerLog)) {
+      for (const item of passengerLog) {
+        if (!item || item.isJizo) continue;
+        const fromIdx = Number(item.fromIdx);
+        const toIdx = Number(item.toIdx);
+        if (Number.isInteger(fromIdx) && fromIdx >= 0 && fromIdx < STATS_STATION_COUNT) {
+          stats.stationBoarded[fromIdx] += 1;
+        }
+        if (Number.isInteger(toIdx) && toIdx >= 0 && toIdx < STATS_STATION_COUNT) {
+          stats.stationAlighted[toIdx] += 1;
+        }
+        carriedThisRun += 1;
+      }
+    }
+    stats.totalCarried += carriedThisRun;
+    store.stats = stats;
+
+    const saved = saveHighScores(store);
+
+    const targetKey = scoreRecordKey(rec);
+    const overallIdx = saved.overall.findIndex((item) => scoreRecordKey(item) === targetKey);
+    const courseIdx = (saved.byCourse[rec.courseKey] || []).findIndex((item) => scoreRecordKey(item) === targetKey);
+    const overallRank = overallIdx >= 0 ? overallIdx + 1 : null;
+    const courseRank = courseIdx >= 0 ? courseIdx + 1 : null;
+
+    return {
+      store: saved,
+      record: rec,
+      overallRank,
+      courseRank,
+      isNewOverallBest: overallRank === 1 && rec.score >= prevOverallBest,
+      isNewCourseBest: courseRank === 1 && rec.score >= prevCourseBest,
+    };
+  }
+
+  function clearHighScores() {
+    return saveHighScores(createEmptyHighScoreStore());
+  }
+
+  function deleteOverallHighScores(recordKeys) {
+    const store = loadHighScores();
+    const keySet = new Set(Array.isArray(recordKeys) ? recordKeys : []);
+    if (keySet.size === 0) return store;
+    store.overall = (store.overall || []).filter((rec) => !keySet.has(scoreRecordKey(rec)));
+    return saveHighScores(store);
+  }
+
+  function escapeCsvField(val) {
+    const str = String(val == null ? '' : val);
+    if (/[",\r\n]/.test(str)) {
+      return `"${str.replace(/"/g, '""')}"`;
+    }
+    return str;
+  }
+
+  function exportHighScoresToCsv(store = null) {
+    const data = sanitizeHighScoreStore(store || loadHighScores());
+    const header = [
+      'scope',
+      'courseKey',
+      'courseName',
+      'score',
+      'rank',
+      'diffKey',
+      'mods',
+      'delaySec',
+      'smoothRate',
+      'achievedAt',
+    ];
+    const lines = [header.join(',')];
+
+    const pushRow = (scope, rec) => {
+      const courseName = formatTrainDisplayName(rec.courseKey);
+      lines.push(
+        [
+          scope,
+          rec.courseKey,
+          courseName,
+          rec.score,
+          rec.rank,
+          rec.diffKey,
+          (rec.mods || []).join('|'),
+          rec.delaySec,
+          rec.smoothRate,
+          rec.achievedAt,
+        ]
+          .map(escapeCsvField)
+          .join(',')
+      );
+    };
+
+    data.overall.forEach((rec) => pushRow('overall', rec));
+    const baseOrder = Array.isArray(TRAIN_ORDER) ? TRAIN_ORDER : [];
+    const orderedKeys = [...baseOrder, ...Object.keys(data.byCourse).filter((k) => !baseOrder.includes(k))];
+    orderedKeys.forEach((courseKey) => {
+      (data.byCourse[courseKey] || []).forEach((rec) => pushRow('course', rec));
+    });
+
+    // 輸送実績（累計・駅別）を出力
+    const stats = sanitizeStats(data.stats);
+    lines.push(
+      ['stats_total', 'TOTAL', '累計輸送実績', stats.totalCarried, '', '', '', stats.totalRuns, '', '']
+        .map(escapeCsvField)
+        .join(',')
+    );
+    for (let i = 0; i < STATS_STATION_COUNT; i++) {
+      const st = STATIONS[i];
+      const stName = st ? `${st.num} ${st.name}` : `駅${i}`;
+      lines.push(
+        [
+          'stats_station',
+          String(i),
+          stName,
+          stats.stationBoarded[i] || 0,
+          '',
+          '',
+          '',
+          stats.stationAlighted[i] || 0,
+          '',
+          '',
+        ]
+          .map(escapeCsvField)
+          .join(',')
+      );
+    }
+
+    return '\uFEFF' + lines.join('\r\n');
+  }
+
+  function parseCsvRows(text) {
+    const clean = String(text || '').replace(/^\uFEFF/, '');
+    const rows = [];
+    let row = [];
+    let field = '';
+    let inQuotes = false;
+
+    for (let i = 0; i < clean.length; i++) {
+      const ch = clean[i];
+      if (inQuotes) {
+        if (ch === '"') {
+          if (clean[i + 1] === '"') {
+            field += '"';
+            i++;
+          } else {
+            inQuotes = false;
+          }
+        } else {
+          field += ch;
+        }
+      } else if (ch === '"') {
+        inQuotes = true;
+      } else if (ch === ',') {
+        row.push(field);
+        field = '';
+      } else if (ch === '\r' || ch === '\n') {
+        if (ch === '\r' && clean[i + 1] === '\n') i++;
+        row.push(field);
+        if (row.some((cell) => cell.trim() !== '')) {
+          rows.push(row);
+        }
+        row = [];
+        field = '';
+      } else {
+        field += ch;
+      }
+    }
+    row.push(field);
+    if (row.some((cell) => cell.trim() !== '')) {
+      rows.push(row);
+    }
+    return rows;
+  }
+
+  function importHighScoresFromCsv(csvText) {
+    const rows = parseCsvRows(csvText);
+    if (rows.length < 1) {
+      return { ok: false, error: 'CSVが空です', importedCount: 0, skippedCount: 0, store: loadHighScores() };
+    }
+
+    const header = rows[0].map((h) => h.trim());
+    const idxCourseKey = header.indexOf('courseKey');
+    const idxScore = header.indexOf('score');
+    if (idxCourseKey < 0 || idxScore < 0) {
+      return {
+        ok: false,
+        error: 'CSVのヘッダ形式が不正です（courseKey / score 列が必要）',
+        importedCount: 0,
+        skippedCount: 0,
+        store: loadHighScores(),
+      };
+    }
+
+    const idxScope = header.indexOf('scope');
+    const idxRank = header.indexOf('rank');
+    const idxDiff = header.indexOf('diffKey');
+    const idxMods = header.indexOf('mods');
+    const idxDelay = header.indexOf('delaySec');
+    const idxSmooth = header.indexOf('smoothRate');
+    const idxAt = header.indexOf('achievedAt');
+
+    const current = loadHighScores();
+    const overallPool = [...current.overall];
+    const byCoursePools = {};
+    Object.keys(current.byCourse).forEach((k) => {
+      byCoursePools[k] = [...current.byCourse[k]];
+    });
+    const mergedStats = sanitizeStats(current.stats);
+
+    let importedScoreCount = 0;
+    let importedStatsCount = 0;
+    let skippedCount = 0;
+
+    for (let r = 1; r < rows.length; r++) {
+      const cols = rows[r];
+      const scope = idxScope >= 0 ? String(cols[idxScope] || '').trim().toLowerCase() : '';
+
+      if (scope === 'stats_total') {
+        const carriedNum = parseNonNegativeNumber(cols[idxScore]);
+        const runsNum = idxDelay >= 0 ? parseNonNegativeNumber(cols[idxDelay]) : 0;
+        if (Number.isFinite(carriedNum)) {
+          mergedStats.totalCarried = Math.max(mergedStats.totalCarried, Math.round(carriedNum));
+          if (Number.isFinite(runsNum)) {
+            mergedStats.totalRuns = Math.max(mergedStats.totalRuns, Math.round(runsNum));
+          }
+          if (carriedNum > 0 || (Number.isFinite(runsNum) && runsNum > 0)) {
+            importedStatsCount++;
+          }
+        } else {
+          skippedCount++;
+        }
+        continue;
+      }
+
+      if (scope === 'stats_station') {
+        const stIdx = parseNonNegativeNumber(cols[idxCourseKey]);
+        const boardedNum = parseNonNegativeNumber(cols[idxScore]);
+        const alightedNum = idxDelay >= 0 ? parseNonNegativeNumber(cols[idxDelay]) : 0;
+        if (
+          Number.isInteger(stIdx) &&
+          stIdx >= 0 &&
+          stIdx < STATS_STATION_COUNT &&
+          Number.isFinite(boardedNum)
+        ) {
+          mergedStats.stationBoarded[stIdx] = Math.max(
+            mergedStats.stationBoarded[stIdx],
+            Math.round(boardedNum)
+          );
+          if (Number.isFinite(alightedNum)) {
+            mergedStats.stationAlighted[stIdx] = Math.max(
+              mergedStats.stationAlighted[stIdx],
+              Math.round(alightedNum)
+            );
+          }
+          if (boardedNum > 0 || (Number.isFinite(alightedNum) && alightedNum > 0)) {
+            importedStatsCount++;
+          }
+        } else {
+          skippedCount++;
+        }
+        continue;
+      }
+
+      const rec = normalizeScoreRecord({
+        courseKey: cols[idxCourseKey],
+        score: cols[idxScore],
+        rank: idxRank >= 0 ? cols[idxRank] : 'C',
+        diffKey: idxDiff >= 0 ? cols[idxDiff] : 'normal',
+        mods: idxMods >= 0 ? cols[idxMods] : '',
+        delaySec: idxDelay >= 0 ? cols[idxDelay] : 0,
+        smoothRate: idxSmooth >= 0 ? cols[idxSmooth] : 100,
+        achievedAt: idxAt >= 0 ? cols[idxAt] : '',
+      });
+      if (!rec) {
+        skippedCount++;
+        continue;
+      }
+
+      if (scope === 'overall') {
+        overallPool.push(rec);
+      } else if (scope === 'course') {
+        if (!byCoursePools[rec.courseKey]) byCoursePools[rec.courseKey] = [];
+        byCoursePools[rec.courseKey].push(rec);
+      } else {
+        overallPool.push(rec);
+        if (!byCoursePools[rec.courseKey]) byCoursePools[rec.courseKey] = [];
+        byCoursePools[rec.courseKey].push(rec);
+      }
+      importedScoreCount++;
+    }
+
+    if (importedScoreCount === 0 && importedStatsCount === 0) {
+      return {
+        ok: false,
+        error: '取り込み可能なスコアデータが見つかりませんでした',
+        importedCount: 0,
+        importedScoreCount: 0,
+        importedStatsCount: 0,
+        skippedCount,
+        store: current,
+      };
+    }
+
+    const maxOverall = (HIGHSCORE_CONFIG && HIGHSCORE_CONFIG.maxOverall) || 20;
+    const maxPerCourse = (HIGHSCORE_CONFIG && HIGHSCORE_CONFIG.maxPerCourse) || 3;
+    const merged = createEmptyHighScoreStore();
+    merged.overall = dedupeAndSortRecords(overallPool, maxOverall);
+    Object.keys(byCoursePools).forEach((k) => {
+      const cleaned = dedupeAndSortRecords(byCoursePools[k], maxPerCourse);
+      if (cleaned.length > 0) merged.byCourse[k] = cleaned;
+    });
+    const sumBoarded = mergedStats.stationBoarded.reduce((a, b) => a + b, 0);
+    const sumAlighted = mergedStats.stationAlighted.reduce((a, b) => a + b, 0);
+    mergedStats.totalCarried = Math.max(mergedStats.totalCarried, sumBoarded, sumAlighted);
+    merged.stats = mergedStats;
+
+    const saved = saveHighScores(merged);
+    return {
+      ok: true,
+      importedCount: importedScoreCount,
+      importedScoreCount,
+      importedStatsCount,
+      skippedCount,
+      store: saved,
+    };
   }
 
   global.NanbuPuzzle = {
@@ -1094,6 +1675,18 @@
     calcFastForwardRecovery,
     calcScoreMultiplier,
     calcOnTimeBonus,
+    calcSmoothRate,
     evaluateClearRank,
+    getTrainKey,
+    parseTrainKey,
+    formatTrainDisplayName,
+    getScoreRecordKey: scoreRecordKey,
+    loadHighScores,
+    saveHighScores,
+    recordHighScore,
+    clearHighScores,
+    deleteOverallHighScores,
+    exportHighScoresToCsv,
+    importHighScoresFromCsv,
   };
 })(window);
