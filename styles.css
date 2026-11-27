@@ -63,11 +63,6 @@ body {
   text-shadow: 0 0 6px rgba(251, 113, 133, 0.65);
 }
 
-.led-local {
-  color: #fde047;
-  text-shadow: 0 0 6px rgba(253, 224, 71, 0.55);
-}
-
 /* ゲーム画面上部のLED行先表示器風パネル */
 .led-header-panel {
   font-family: 'DotGothic16', 'Noto Sans JP', monospace;

@@ -309,6 +309,7 @@
       this.ctx = null;
       this.synth = null;
       this.masterGain = null;
+      this.directBusGain = null;
       this.synthBusGain = null;
       this.delayNode = null;
       this.delayFeedback = null;
@@ -405,6 +406,9 @@
       delayWet.connect(this.masterGain);
 
       this.masterGain.connect(this.ctx.destination);
+      this.directBusGain = this.ctx.createGain();
+      this.directBusGain.gain.setValueAtTime(1, this.ctx.currentTime);
+      this.directBusGain.connect(this.masterGain);
       this.synthBusGain = synthBusGain;
       this.delayNode = delay;
       this.delayFeedback = delayFeedback;
@@ -481,6 +485,25 @@
       return this.isPlaying || this._starting || this.isWaitingStartDelay();
     }
 
+    _resetDirectBus() {
+      if (!this.ctx || !this.masterGain) return;
+      const oldBus = this.directBusGain;
+      if (oldBus) {
+        const now = this.ctx.currentTime;
+        try {
+          oldBus.gain.cancelScheduledValues(now);
+          oldBus.gain.setValueAtTime(0, now);
+          oldBus.disconnect();
+        } catch (_) {
+          // 既に切断済みの場合は無視
+        }
+      }
+      const nextBus = this.ctx.createGain();
+      nextBus.gain.setValueAtTime(1, this.ctx.currentTime);
+      nextBus.connect(this.masterGain);
+      this.directBusGain = nextBus;
+    }
+
     _setSynthFxActive(active, instant = false) {
       if (!this.ctx) return;
       const now = this.ctx.currentTime;
@@ -508,6 +531,7 @@
       this.paused = false;
       this._applyMode('title');
       this._stopScheduler();
+      this._resetDirectBus();
       this._setSynthFxActive(false, true);
       if (this.muted || this.volume <= 0) return false;
       return await this._start(true, seq);
@@ -523,6 +547,7 @@
       this.paused = false;
       this._applyMode('game');
       this._stopScheduler();
+      this._resetDirectBus();
       this._setSynthFxActive(false, true);
       this.currentStep = 0;
       if (this.masterGain && this.ctx) {
@@ -537,21 +562,6 @@
       }
       if (this.muted || this.volume <= 0) return false;
       return await this._start(true, seq);
-    }
-
-    /**
-     * 再生中にトップ画面用('title')とゲーム画面用('game')を切替
-     */
-    async setMode(mode) {
-      if (!BGM_MODES[mode]) return false;
-      const seq = ++this._sessionSeq;
-      this._clearStartDelay();
-      this.desiredMode = mode;
-      this._applyMode(mode);
-      if (!this.isPlaying && !this.paused && !this.muted && this.volume > 0) {
-        return await this._start(true, seq);
-      }
-      return true;
     }
 
     _applyMode(mode) {
@@ -580,6 +590,7 @@
       this.paused = false;
       this.currentStep = 0;
       this._stopScheduler();
+      this._resetDirectBus();
       this._setSynthFxActive(false, false);
       if (this.masterGain && this.ctx) {
         const now = this.ctx.currentTime;
@@ -597,6 +608,8 @@
       if (this.isPlaying || this._starting) {
         this._stopScheduler();
       }
+      this._resetDirectBus();
+      this._setSynthFxActive(false, false);
       if (this.desiredMode) {
         this.paused = true;
       }
@@ -654,7 +667,8 @@
      * BGM音量調整 (0.0 〜 1.0)
      */
     setVolume(value) {
-      this.volume = Math.max(0, Math.min(1, value));
+      const num = Number(value);
+      this.volume = Math.max(0, Math.min(1, Number.isFinite(num) ? num : 0));
       this._syncMasterGain(false);
       this._syncPlaybackAfterAudioSettingChange();
     }
@@ -842,7 +856,7 @@
       gainNode.gain.setTargetAtTime(0.0001, releaseStart, rel / 3.5);
 
       osc.connect(gainNode);
-      gainNode.connect(this.masterGain);
+      gainNode.connect(this.directBusGain || this.masterGain);
 
       const stopAt = releaseStart + rel * 1.5 + 0.03;
       osc.start(t0);
@@ -861,6 +875,7 @@
       const ctx = this.ctx;
       const t0 = Math.max(ctx.currentTime, time);
       const levelScale = this.useSynth ? 1.0 : 0.72;
+      const outBus = this.directBusGain || this.masterGain;
 
       // 動輪ピストンの低域鼓動（1拍目・3拍目）
       if (localStep % 8 === 0) {
@@ -874,7 +889,7 @@
         gain.gain.exponentialRampToValueAtTime(0.001, t0 + 0.14);
 
         osc.connect(gain);
-        gain.connect(this.masterGain);
+        gain.connect(outBus);
         osc.onended = () => {
           try {
             osc.disconnect();
@@ -903,7 +918,7 @@
 
         src.connect(filter);
         filter.connect(gain);
-        gain.connect(this.masterGain);
+        gain.connect(outBus);
         src.onended = () => {
           try {
             src.disconnect();
@@ -929,7 +944,7 @@
           rimGain.gain.exponentialRampToValueAtTime(0.001, hitTime + 0.045);
 
           rimOsc.connect(rimGain);
-          rimGain.connect(this.masterGain);
+          rimGain.connect(outBus);
           rimOsc.onended = () => {
             try {
               rimOsc.disconnect();

@@ -63,6 +63,7 @@
       this._muted = false;
       this._seVolume = DEFAULT_SE_PCT / 100;
       this.lastSwapTime = -1;
+      this._activeVoices = new Set();
     }
 
     get muted() {
@@ -148,6 +149,26 @@
       return this.ctx;
     }
 
+    stopAll() {
+      if (!this._activeVoices || this._activeVoices.size === 0) return;
+      const voices = Array.from(this._activeVoices);
+      this._activeVoices.clear();
+      voices.forEach(({ osc, gain }) => {
+        try {
+          osc.onended = null;
+          osc.stop();
+        } catch (_) {
+          // 既に停止済みの場合は無視
+        }
+        try {
+          osc.disconnect();
+          gain.disconnect();
+        } catch (_) {
+          // 既に切断済みの場合は無視
+        }
+      });
+    }
+
     pause() {
       if (this.ctx && this.ctx.state === 'running') {
         this.ctx.suspend().catch(() => {});
@@ -171,6 +192,8 @@
       const now = this.ctx.currentTime + delay;
       const osc = this.ctx.createOscillator();
       const gain = this.ctx.createGain();
+      const voice = { osc, gain };
+      this._activeVoices.add(voice);
       osc.type = type;
       osc.frequency.setValueAtTime(freq, now);
       gain.gain.setValueAtTime(0.001, now);
@@ -179,6 +202,7 @@
       osc.connect(gain);
       gain.connect(this.masterOut || this.ctx.destination);
       osc.onended = () => {
+        this._activeVoices.delete(voice);
         try {
           osc.disconnect();
           gain.disconnect();

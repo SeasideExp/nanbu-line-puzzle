@@ -1,78 +1,363 @@
 /**
- * なぜ南武線は混んでるのか？ - 車窓アニメーション描画
- * 川崎〜立川の駅間位置に応じて、以下の5種類の車窓（昼・夜間対応）を Canvas で描画する。
+ * なぜ南武線は混んでるのか？ - 車窓エンジン＆上部1面横スクロールCanvasレンダラー
+ * 駅固有IDベースの無向路線グラフ（buildTrackGraph / resolveTrackSegment）と
+ * 駅間タイムライン正規化・逆方向自動反転（normalizeTimeline / getSegmentScenery / getSceneryForLeg）により、
+ * 車両上部1面の横長車窓（昼・夜間対応の5景観）をクロスフェード描画する。
  *  - city          : 街並みモード（ビル・マンション群）
- *  - tower         : 高層タワーマンション群入り街並みモード（向河原〜武蔵小杉〜武蔵中原）
- *  - residential80 : 住宅地8割・ビル2割モード（尻手〜矢向、平間〜向河原、溝ノ口〜稲田堤・矢野口中間点、府中本町〜西国立）
- *  - mixed50       : 街並み5割・住宅地5割モード（稲田堤・矢野口中間点〜南多摩）
- *  - bridge        : 多摩川橋梁モード（南多摩〜府中本町）
+ *  - tower         : 高層タワーマンション群入り街並みモード
+ *  - residential80 : 住宅地8割・ビル2割モード
+ *  - mixed50       : 街並み5割・住宅地5割モード
+ *  - bridge        : 多摩川橋梁モード
  */
 (function (global) {
   'use strict';
 
+  const Data = global.NanbuData || {};
+  const DEFAULT_STATIONS = Array.isArray(Data.STATIONS) ? Data.STATIONS : [];
+  const DEFAULT_BASE_STATION_COUNT =
+    typeof Data.BASE_STATION_COUNT === 'number'
+      ? Data.BASE_STATION_COUNT
+      : DEFAULT_STATIONS.filter((st) => st && !st.isExtra).length;
+  const DEFAULT_EXTRA_LEGS = Data.EXTRA_SEGMENT_LEGS || {};
+  const DEFAULT_SCENERY_CONFIG = Data.SCENERY_CONFIG || {
+    defaultMode: 'city',
+    stationBaseDir: 'down',
+    stations: {},
+    segments: {},
+  };
+
   /**
-   * 連続駅座標 pos（0=川崎 〜 25=立川）から車窓モードを返す。
-   * 境界点では進行方向 dir (+1: 下り / -1: 上り) に微小オフセットして判定する。
+   * 駅固有IDまたは配列インデックスから駅固有ID（文字列）を解決する
    */
-  function getSceneryModeAtPos(pos, dir = 1) {
-    const p = Math.max(0, Math.min(25, pos + (dir >= 0 ? 1e-4 : -1e-4)));
-    if (p >= 18 && p < 19) return 'bridge';        // 南多摩〜府中本町
-    if (p >= 5 && p < 7) return 'tower';           // 向河原〜武蔵小杉〜武蔵中原
-    if (p >= 15.5 && p < 18) return 'mixed50';     // 稲田堤・矢野口中間点〜矢野口〜稲城長沼〜南多摩
-    if (
-      (p >= 1 && p < 2) ||                         // 尻手〜矢向
-      (p >= 4 && p < 5) ||                         // 平間〜向河原
-      (p >= 9 && p < 15.5) ||                      // 武蔵溝ノ口〜稲田堤〜稲田堤・矢野口中間点
-      (p >= 19 && p < 24)                          // 府中本町〜分倍河原〜西府〜谷保〜矢川〜西国立
-    ) {
-      return 'residential80';
+  function resolveStationId(stationIdOrIdx, stations = DEFAULT_STATIONS) {
+    if (typeof stationIdOrIdx === 'string' && stationIdOrIdx) {
+      return stationIdOrIdx;
     }
-    return 'city';                                 // 川崎〜尻手、矢向〜平間、武蔵中原〜武蔵溝ノ口、西国立〜立川
+    if (typeof stationIdOrIdx === 'number' && stations[stationIdOrIdx] && stations[stationIdOrIdx].id) {
+      return stations[stationIdOrIdx].id;
+    }
+    return '';
+  }
+
+  function resolveSingleMode(mode, fallbackMode) {
+    if (typeof mode === 'string' && mode) return mode;
+    return fallbackMode;
   }
 
   /**
-   * 駅ホーム停車時の車窓モードを返す（南多摩・府中本町など橋梁隣接駅でも川の上で停車しないよう補正）
+   * 駅間景観定義（単一文字列／累積比率 to／相対重み ratio／実距離 km）を
+   * 正規化タイムライン [{ to: 0..1, mode }, ...] へ変換する
    */
-  function getStationSceneryMode(stationIdx, dir = 1) {
-    if (stationIdx === 18) return 'mixed50';       // 南多摩駅ホーム
-    if (stationIdx === 19) return 'residential80'; // 府中本町駅ホーム
-    const mode = getSceneryModeAtPos(stationIdx, dir);
-    return mode === 'bridge' ? 'residential80' : mode;
-  }
-
-  /**
-   * 発駅 fromIdx → 次停車駅 nextIdx の走行進捗 progress (0..1) から、
-   * 駅間実距離に応じた連続駅座標 pos (0..25) を計算する（快速の通過区間も正確に対応）。
-   */
-  function calcTrackPosition(stations, fromIdx, nextIdx, progress) {
-    if (fromIdx === nextIdx || !stations || !stations.length) return fromIdx || 0;
-    const t = Math.max(0, Math.min(1, progress));
-    const step = nextIdx > fromIdx ? 1 : -1;
-
-    if (Math.abs(nextIdx - fromIdx) === 1) {
-      return fromIdx + (nextIdx - fromIdx) * t;
+  function normalizeTimeline(def, fallbackMode = DEFAULT_SCENERY_CONFIG.defaultMode || 'city') {
+    const fb = resolveSingleMode(fallbackMode, 'city');
+    if (!def) {
+      return [{ to: 1, mode: fb }];
+    }
+    if (typeof def === 'string') {
+      return [{ to: 1, mode: def }];
+    }
+    if (!Array.isArray(def) || def.length === 0) {
+      return [{ to: 1, mode: fb }];
     }
 
-    const segs = [];
-    let totalDist = 0;
-    for (let k = fromIdx; k !== nextIdx; k += step) {
-      const segIdx = step > 0 ? k : k - 1;
-      const d = Math.max(0.1, (stations[segIdx] && stations[segIdx].dist) || 1.0);
-      segs.push({ start: k, end: k + step, dist: d });
-      totalDist += d;
-    }
-
-    let targetDist = totalDist * t;
-    for (const seg of segs) {
-      if (targetDist <= seg.dist || seg === segs[segs.length - 1]) {
-        const localT = seg.dist > 0 ? Math.min(1, targetDist / seg.dist) : 1;
-        return seg.start + (seg.end - seg.start) * localT;
+    const usesWeights = def.some((item) => item && (item.ratio != null || item.km != null));
+    if (usesWeights) {
+      const weights = def.map((item) => {
+        if (!item) return 0;
+        const w = Number(item.ratio != null ? item.ratio : item.km);
+        return Number.isFinite(w) && w > 0 ? w : 0;
+      });
+      const total = weights.reduce((sum, w) => sum + w, 0);
+      if (total <= 0) {
+        return [{ to: 1, mode: resolveSingleMode(def[0] && def[0].mode, fb) }];
       }
-      targetDist -= seg.dist;
+      const slices = [];
+      let acc = 0;
+      for (let i = 0; i < def.length; i++) {
+        if (weights[i] <= 0) continue;
+        acc += weights[i];
+        slices.push({
+          to: acc / total,
+          mode: resolveSingleMode(def[i] && def[i].mode, fb),
+        });
+      }
+      if (slices.length === 0) return [{ to: 1, mode: fb }];
+      slices[slices.length - 1].to = 1;
+      return slices;
     }
-    return nextIdx;
+
+    const slices = def
+      .filter((item) => item && typeof item.mode === 'string' && item.mode)
+      .map((item) => {
+        const toNum = Number(item.to);
+        return {
+          to: Number.isFinite(toNum) ? Math.max(0, Math.min(1, toNum)) : 1,
+          mode: item.mode,
+        };
+      })
+      .sort((a, b) => a.to - b.to);
+
+    if (slices.length === 0) {
+      return [{ to: 1, mode: fb }];
+    }
+    if (slices[slices.length - 1].to < 1) {
+      slices[slices.length - 1].to = 1;
+    }
+    return slices;
   }
 
+  function pickTimelineSlice(timeline, t) {
+    const localT = Math.max(0, Math.min(1, Number(t) || 0));
+    for (let i = 0; i < timeline.length - 1; i++) {
+      if (localT < timeline[i].to) {
+        return timeline[i].mode;
+      }
+    }
+    return timeline[timeline.length - 1].mode;
+  }
+
+  /**
+   * 駅固有IDベースの無向路線グラフ（隣接駅IDと営業キロ）を構築する
+   */
+  function buildTrackGraph(
+    stations = DEFAULT_STATIONS,
+    extraSegmentLegs = DEFAULT_EXTRA_LEGS,
+    baseStationCount = DEFAULT_BASE_STATION_COUNT
+  ) {
+    const adj = new Map();
+    const ensureNode = (id) => {
+      if (!adj.has(id)) adj.set(id, new Map());
+      return adj.get(id);
+    };
+    const addEdge = (idA, idB, dist) => {
+      if (!idA || !idB || idA === idB) return;
+      const d = Math.max(0.1, Number(dist) || 1.0);
+      ensureNode(idA).set(idB, d);
+      ensureNode(idB).set(idA, d);
+    };
+
+    const mainLimit = Math.min(baseStationCount || stations.length, stations.length);
+    for (let i = 0; i < mainLimit - 1; i++) {
+      const a = stations[i];
+      const b = stations[i + 1];
+      if (a && b && a.id && b.id) {
+        addEdge(a.id, b.id, a.dist);
+      }
+    }
+
+    const findStationToken = (token) => {
+      const byId = stations.find((s) => s && s.id === token);
+      if (byId) return byId;
+      if (/^\d+$/.test(token)) {
+        const idx = Number(token);
+        if (Number.isInteger(idx) && stations[idx]) return stations[idx];
+      }
+      return null;
+    };
+
+    Object.entries(extraSegmentLegs || {}).forEach(([pairKey, leg]) => {
+      if (!leg) return;
+      const parts = pairKey.split('-');
+      if (parts.length !== 2) return;
+      const a = findStationToken(parts[0]);
+      const b = findStationToken(parts[1]);
+      if (a && b && a.id && b.id) {
+        addEdge(a.id, b.id, leg.dist);
+      }
+    });
+
+    return adj;
+  }
+
+  const defaultTrackGraph = buildTrackGraph(DEFAULT_STATIONS, DEFAULT_EXTRA_LEGS, DEFAULT_BASE_STATION_COUNT);
+  const defaultPathCache = new Map();
+  const normalizedSegmentCache = new WeakMap();
+
+  function getCachedNormalizedTimeline(sceneryConfig, key) {
+    const cfg = sceneryConfig || DEFAULT_SCENERY_CONFIG;
+    const segments = cfg.segments || {};
+    if (!Object.prototype.hasOwnProperty.call(segments, key)) return null;
+    let map = normalizedSegmentCache.get(cfg);
+    if (!map) {
+      map = new Map();
+      normalizedSegmentCache.set(cfg, map);
+    }
+    if (!map.has(key)) {
+      map.set(key, normalizeTimeline(segments[key], cfg.defaultMode || 'city'));
+    }
+    return map.get(key);
+  }
+
+  /**
+   * 発駅ID → 次停車駅ID の隣接区間チェーン（BFS最短経路）を解決・キャッシュする
+   */
+  function getSegmentChain(fromId, nextId, trackGraph = defaultTrackGraph, pathCache = defaultPathCache) {
+    if (!fromId || !nextId || fromId === nextId) return null;
+    const cacheKey = `${fromId}>${nextId}`;
+    if (pathCache && pathCache.has(cacheKey)) {
+      return pathCache.get(cacheKey);
+    }
+
+    const directNeighbors = trackGraph.get(fromId);
+    if (directNeighbors && directNeighbors.has(nextId)) {
+      const dist = directNeighbors.get(nextId);
+      const chain = { edges: [{ fromId, toId: nextId, dist }], totalDist: dist };
+      if (pathCache) pathCache.set(cacheKey, chain);
+      return chain;
+    }
+
+    if (!trackGraph.has(fromId) || !trackGraph.has(nextId)) {
+      if (pathCache) pathCache.set(cacheKey, null);
+      return null;
+    }
+
+    const queue = [fromId];
+    const prev = new Map([[fromId, null]]);
+    let head = 0;
+    let found = false;
+
+    while (head < queue.length) {
+      const cur = queue[head++];
+      if (cur === nextId) {
+        found = true;
+        break;
+      }
+      const neighbors = trackGraph.get(cur);
+      if (!neighbors) continue;
+      for (const nxt of neighbors.keys()) {
+        if (!prev.has(nxt)) {
+          prev.set(nxt, cur);
+          queue.push(nxt);
+        }
+      }
+    }
+
+    if (!found) {
+      if (pathCache) pathCache.set(cacheKey, null);
+      return null;
+    }
+
+    const nodeIds = [];
+    for (let cur = nextId; cur !== null; cur = prev.get(cur)) {
+      nodeIds.push(cur);
+    }
+    nodeIds.reverse();
+
+    const edges = [];
+    let totalDist = 0;
+    for (let i = 0; i < nodeIds.length - 1; i++) {
+      const a = nodeIds[i];
+      const b = nodeIds[i + 1];
+      const dist = trackGraph.get(a).get(b);
+      edges.push({ fromId: a, toId: b, dist });
+      totalDist += dist;
+    }
+
+    const chain = { edges, totalDist };
+    if (pathCache) pathCache.set(cacheKey, chain);
+    return chain;
+  }
+
+  /**
+   * 発駅 → 次停車駅の走行進捗 progress (0..1) から、
+   * 現在通過中の隣接2駅IDと区間内比率 localT (0..1) を営業キロ比例で解決する
+   */
+  function resolveTrackSegment(fromIdOrIdx, nextIdOrIdx, progress, options = null) {
+    const stations = (options && options.stations) || DEFAULT_STATIONS;
+    const trackGraph = (options && options.trackGraph) || defaultTrackGraph;
+    const pathCache = options && options.trackGraph ? options.pathCache || null : defaultPathCache;
+    const fromId = resolveStationId(fromIdOrIdx, stations);
+    const nextId = resolveStationId(nextIdOrIdx, stations);
+    if (!fromId || !nextId || fromId === nextId) return null;
+
+    const t = Math.max(0, Math.min(1, Number(progress) || 0));
+    const chain = getSegmentChain(fromId, nextId, trackGraph, pathCache);
+    if (!chain || chain.edges.length === 0) return null;
+
+    if (chain.edges.length === 1) {
+      return {
+        fromId: chain.edges[0].fromId,
+        toId: chain.edges[0].toId,
+        localT: t,
+        totalDist: chain.totalDist,
+      };
+    }
+
+    let targetDist = chain.totalDist * t;
+    for (let i = 0; i < chain.edges.length; i++) {
+      const edge = chain.edges[i];
+      if (targetDist < edge.dist || i === chain.edges.length - 1) {
+        const localT = edge.dist > 0 ? Math.max(0, Math.min(1, targetDist / edge.dist)) : 1;
+        return {
+          fromId: edge.fromId,
+          toId: edge.toId,
+          localT,
+          totalDist: chain.totalDist,
+        };
+      }
+      targetDist -= edge.dist;
+    }
+
+    const last = chain.edges[chain.edges.length - 1];
+    return { fromId: last.fromId, toId: last.toId, localT: 1, totalDist: chain.totalDist };
+  }
+
+  /**
+   * 隣接2駅の固有IDペア (fromId -> toId) と区間内進捗 localT (0..1) から車窓モードを取得する
+   * 逆方向 ('toId>fromId') のみ登録されている場合は進捗 (1 - localT) へ自動反転して解決する
+   */
+  function getSegmentScenery(fromIdOrIdx, toIdOrIdx, localT, sceneryConfig = DEFAULT_SCENERY_CONFIG) {
+    const cfg = sceneryConfig || DEFAULT_SCENERY_CONFIG;
+    const fromId = resolveStationId(fromIdOrIdx);
+    const toId = resolveStationId(toIdOrIdx);
+    const fallback = resolveSingleMode(cfg.stations && cfg.stations[fromId], cfg.defaultMode || 'city');
+    if (!fromId || !toId) return fallback;
+
+    const forwardTimeline = getCachedNormalizedTimeline(cfg, `${fromId}>${toId}`);
+    if (forwardTimeline) {
+      return pickTimelineSlice(forwardTimeline, localT);
+    }
+
+    const reverseTimeline = getCachedNormalizedTimeline(cfg, `${toId}>${fromId}`);
+    if (reverseTimeline) {
+      const revT = 1 - Math.max(0, Math.min(1, Number(localT) || 0));
+      return pickTimelineSlice(reverseTimeline, revT);
+    }
+
+    return fallback;
+  }
+
+  /**
+   * 駅ホーム停車時の車窓モードを駅固有ID（またはインデックス）から取得する
+   */
+  function getStationSceneryMode(stationIdOrIdx, _dir = 'down', sceneryConfig = DEFAULT_SCENERY_CONFIG) {
+    const cfg = sceneryConfig || DEFAULT_SCENERY_CONFIG;
+    const stationId = resolveStationId(stationIdOrIdx);
+    return resolveSingleMode(cfg.stations && cfg.stations[stationId], cfg.defaultMode || 'city');
+  }
+
+  /**
+   * 発駅 → 次停車駅（各停・快速・支線すべて対応）の進捗 progress (0..1) に対応する車窓モードを返す
+   */
+  function getSceneryForLeg(fromIdOrIdx, nextIdOrIdx, progress, dir = 'down', sceneryConfig = DEFAULT_SCENERY_CONFIG, options = null) {
+    const stations = (options && options.stations) || DEFAULT_STATIONS;
+    const fromId = resolveStationId(fromIdOrIdx, stations);
+    const nextId = resolveStationId(nextIdOrIdx, stations);
+    const defaultMode = (sceneryConfig && sceneryConfig.defaultMode) || 'city';
+    if (!fromId) return defaultMode;
+    if (!nextId || fromId === nextId) {
+      return getStationSceneryMode(fromId, dir, sceneryConfig);
+    }
+    const seg = resolveTrackSegment(fromId, nextId, progress, options);
+    if (!seg) {
+      return getStationSceneryMode(fromId, dir, sceneryConfig);
+    }
+    return getSegmentScenery(seg.fromId, seg.toId, seg.localT, sceneryConfig);
+  }
+
+  /* -------------------------------------------------------------------------
+   * 上部1面横スクロール車窓レンダラー（路線知識を持たない純粋描画層）
+   * ------------------------------------------------------------------------- */
   // 街並みビル定義（8パターン）
   const CITY_HEIGHTS = [0.55, 0.38, 0.68, 0.44, 0.52, 0.72, 0.40, 0.60];
   const CITY_COLORS_DAY = ['#94a3b8', '#64748b', '#cbd5e1', '#7c8ea3', '#94a3b8', '#475569', '#a8b5c4', '#64748b'];
@@ -99,7 +384,7 @@
   class SceneryRenderer {
     constructor(canvas) {
       this.canvas = canvas;
-      this.ctx = canvas.getContext('2d');
+      this.ctx = canvas ? canvas.getContext('2d') : null;
       this.offset = 0;
       this.speed = 0;
       this.targetSpeed = 0;
@@ -113,6 +398,7 @@
     }
 
     resize() {
+      if (!this.canvas || !this.ctx) return;
       const rect = this.canvas.getBoundingClientRect();
       const dpr = Math.min(global.devicePixelRatio || 1, 2);
       this.canvas.width = Math.max(100, Math.floor(rect.width * dpr));
@@ -120,6 +406,7 @@
       this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       this.w = rect.width;
       this.h = rect.height;
+      this.draw();
     }
 
     setNight(isNight) {
@@ -128,13 +415,21 @@
 
     setMode(running, mode = null) {
       this.targetSpeed = running ? 210 : 0;
-      if (mode === null || mode === undefined) return;
-      const nextMode = typeof mode === 'boolean' ? (mode ? 'bridge' : 'city') : mode;
-      if (nextMode !== this.mode) {
+      if (typeof mode !== 'string' || !mode) return;
+      if (mode !== this.mode) {
         this.prevMode = this.mode;
-        this.mode = nextMode;
+        this.mode = mode;
         this.fadeProgress = 0;
       }
+    }
+
+    reset(mode = 'city') {
+      this.speed = 0;
+      this.targetSpeed = 0;
+      this.mode = resolveSingleMode(mode, 'city');
+      this.prevMode = null;
+      this.fadeProgress = 1;
+      this.draw();
     }
 
     update(dt) {
@@ -150,6 +445,7 @@
     }
 
     draw() {
+      if (!this.ctx) return;
       const ctx = this.ctx;
       const w = this.w;
       const h = this.h;
@@ -527,8 +823,11 @@
 
   global.NanbuScenery = {
     SceneryRenderer,
-    getSceneryModeAtPos,
+    normalizeTimeline,
+    buildTrackGraph,
+    resolveTrackSegment,
+    getSegmentScenery,
+    getSceneryForLeg,
     getStationSceneryMode,
-    calcTrackPosition,
   };
 })(window);

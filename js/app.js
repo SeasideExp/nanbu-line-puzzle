@@ -22,7 +22,7 @@
   const { ROWS, COLS, MAX_DELAY_SEC } = BOARD_CONFIG;
   const { loadAudioSettings, saveAudioSettings, SoundEngine } = global.NanbuSound;
   const { TrainPuzzleBgmPlayer } = global.NanbuBgm;
-  const { SceneryRenderer, getSceneryModeAtPos, getStationSceneryMode, calcTrackPosition } = global.NanbuScenery;
+  const { SceneryRenderer, getSceneryForLeg, getStationSceneryMode } = global.NanbuScenery;
   const Puzzle = global.NanbuPuzzle;
   const UI = global.NanbuUI;
 
@@ -47,7 +47,7 @@
     prevPhaseBeforePause: 'RUNNING',
     direction: 'down',   // 'down' (川崎→立川) | 'up' (立川→川崎)
     step: 1,             // +1 (down) | -1 (up)
-    courseKey: 'full',   // 'full' | 'trial' | 'rapid'
+    courseKey: 'full',   // COURSES キー（full / trial / rapid / 各区間・連絡列車）
     odMode: 'balanced',  // バランス補正 (γ=0.75) に統一
     diffKey: 'normal',   // 'turtle' | 'easy' | 'normal' | 'recovery'
     doorJizo: false,     // 追加難易度：ドア前地蔵
@@ -470,6 +470,23 @@
     }
   }
 
+  function closeAllSubModals() {
+    if (!el) return;
+    [
+      el.modalResultDetail,
+      el.modalData,
+      el.modalSound,
+      el.modalModHelp,
+      el.modalHowto,
+      el.modalAbout,
+      el.modalRankHelp,
+      el.modalHsDeleteConfirm,
+      el.modalHighscore,
+    ].forEach((modal) => {
+      if (modal) modal.classList.add('hidden');
+    });
+  }
+
   async function startGame() {
     if (state.phase === 'STARTING' || state.capturingScreenshot) return;
     titleBgmUnlocked = true;
@@ -477,6 +494,7 @@
     if (el.titleBgmHint) el.titleBgmHint.classList.add('hidden');
     sound.ensureContext();
     sound.resume();
+    sound.stopAll();
     bgm.stop();
     state.hasDeparted = false;
     const myRunId = (state.runId || 0) + 1;
@@ -486,11 +504,9 @@
     state.latestShareText = '';
     flushPauseWaiters();
     if (el.fxLayer) el.fxLayer.innerHTML = '';
+    if (el.carBody) el.carBody.classList.remove('shake-effect');
     if (el.modalDeparture) el.modalDeparture.classList.add('hidden');
-    if (el.modalSound) el.modalSound.classList.add('hidden');
-    if (el.modalHighscore) el.modalHighscore.classList.add('hidden');
-    if (el.modalRankHelp) el.modalRankHelp.classList.add('hidden');
-    if (el.modalHsDeleteConfirm) el.modalHsDeleteConfirm.classList.add('hidden');
+    closeAllSubModals();
     if (el.doorsContainer) el.doorsContainer.classList.remove('doors-open');
 
     const dir = DIRECTIONS[state.direction] || DIRECTIONS.down;
@@ -529,7 +545,6 @@
       state.courseKey,
       state.direction,
       state.odMode,
-      state.diffKey,
       allocateUid,
       { doorJizo: state.doorJizo, g1Event: state.g1Event }
     );
@@ -587,8 +602,9 @@
     releaseActivePointerCapture();
 
     const isNightCourse = Boolean(COURSES[state.courseKey] && COURSES[state.courseKey].isNight);
+    const startSt = STATIONS[state.startStationIdx];
     scenery.setNight(isNightCourse);
-    scenery.setMode(false, getStationSceneryMode(state.startStationIdx, state.step));
+    scenery.reset(getStationSceneryMode(startSt ? startSt.id : state.startStationIdx, state.direction));
     UI.syncCarLayout(el);
     scenery.resize();
 
@@ -675,7 +691,8 @@
       recordBoardedPassengers(originTransferPassengers, transferRes.boardedUids);
 
       setPhaseBadge('連絡乗継', 'bg-amber-400');
-      el.announceText.textContent = `🚃 立川方面からの乗継客 +${transferRes.boardedCount}人が乗り継ぎました！`;
+      const leftNote = transferRes.leftBehind > 0 ? `（満員のため${transferRes.leftBehind}人は次列車待ち）` : '';
+      el.announceText.textContent = `🚃 立川方面からの乗継客 +${transferRes.boardedCount}人が乗り継ぎました！${leftNote}`;
 
       refreshReachability();
       UI.renderGrid(el, state, transferRes.boardedUids);
@@ -709,14 +726,14 @@
 
   function syncRunningScenery() {
     if (!scenery) return;
+    const fromSt = STATIONS[state.currentStationIdx];
     const nextIdx = UI.getNextStopIdx(state);
-    // 到着フレームで progress=1 が次区間（南多摩停車中の多摩川鉄橋など）へ踏み越えないよう 0.999 上限にクランプ
+    const nextSt = STATIONS[nextIdx];
+    if (!fromSt || !nextSt) return;
     const progress = state.timeTotal > 0
-      ? Math.max(0, Math.min(0.999, 1 - state.timeRemaining / state.timeTotal))
+      ? Math.max(0, Math.min(1, 1 - state.timeRemaining / state.timeTotal))
       : 0;
-    const pos = calcTrackPosition(STATIONS, state.currentStationIdx, nextIdx, progress);
-    const dir = nextIdx >= state.currentStationIdx ? 1 : -1;
-    scenery.setMode(true, getSceneryModeAtPos(pos, dir));
+    scenery.setMode(true, getSceneryForLeg(fromSt.id, nextSt.id, progress, state.direction));
   }
 
   function beginRunningLeg(stopPos, newlyBoardedUids = new Set()) {
@@ -780,8 +797,8 @@
     const arrivalIdx = state.routeStops[arrivalStopPos];
     const arrivalSt = STATIONS[arrivalIdx];
 
-    // 停車＆ドア開アニメーション（駅ホームに合わせた車窓へ同期し、鉄橋上での停車を防止）
-    scenery.setMode(false, getStationSceneryMode(arrivalIdx, state.step));
+    // 停車＆ドア開アニメーション（駅固有IDの停車景観へ同期し、鉄橋上での停車を防止）
+    scenery.setMode(false, getStationSceneryMode(arrivalSt ? arrivalSt.id : arrivalIdx, state.direction));
     setPhaseBadge('停車中', 'bg-emerald-400');
     el.announceText.textContent = UI.formatArrivalAnnounce(arrivalSt, state);
 
@@ -992,6 +1009,18 @@
       if (!(await pausableSleep(650, myRunId))) return;
 
       if (state.delaySec > MAX_DELAY_SEC) {
+        // 未発車の新規乗客を盤面から戻し、ログ・HUDと整合させた状態で運転中止へ遷移
+        for (let r = 0; r < ROWS; r++) {
+          for (let c = 0; c < COLS; c++) {
+            const p = state.grid[r][c];
+            if (p && boardedUids.has(p.uid)) {
+              state.grid[r][c] = null;
+            }
+          }
+        }
+        refreshReachability(arrivalIdx);
+        UI.renderGrid(el, state);
+        UI.updateHUD(el, state);
         showResult(false);
         return;
       }
@@ -1081,20 +1110,21 @@
 
     if (state.phase === 'RUNNING' && !state.capturingScreenshot && !document.hidden) {
       state.timeRemaining -= dt;
-      syncRunningScenery();
-
-      // 残り3秒カウントダウンビープ
-      const ceilSec = Math.ceil(state.timeRemaining);
-      if (ceilSec <= 3 && ceilSec >= 1 && ceilSec < state.lastTickSec) {
-        state.lastTickSec = ceilSec;
-        sound.playTick();
-      }
 
       if (state.timeRemaining <= 0) {
         state.timeRemaining = 0;
         UI.updateTimerUI(el, state);
         triggerArrival(false);
       } else {
+        syncRunningScenery();
+
+        // 残り3秒カウントダウンビープ
+        const ceilSec = Math.ceil(state.timeRemaining);
+        if (ceilSec <= 3 && ceilSec >= 1 && ceilSec < state.lastTickSec) {
+          state.lastTickSec = ceilSec;
+          sound.playTick();
+        }
+
         UI.updateTimerUI(el, state);
         UI.updateFastForwardHint(el, state);
       }
@@ -1378,6 +1408,19 @@
     ]);
     let unlockingTitleBgm = false;
 
+    const tryUnlockAudioContext = async () => {
+      const ctx = sound.ensureContext();
+      if (!ctx) return false;
+      if (ctx.state === 'suspended') {
+        try {
+          await ctx.resume();
+        } catch (_) {
+          // 自動再生制限中は次回ジェスチャで再試行
+        }
+      }
+      return ctx.state === 'running';
+    };
+
     const unlockTitleAudioOnFirstGesture = async (e) => {
       if (titleBgmUnlocked) {
         cleanupGestureUnlock();
@@ -1392,11 +1435,10 @@
 
       unlockingTitleBgm = true;
       try {
-        const ctx = sound.ensureContext();
-        let unlocked = Boolean(ctx && ctx.state === 'running');
+        let unlocked = await tryUnlockAudioContext();
         if (!audioSettings.muted && audioSettings.bgmVolume > 0) {
           const started = await bgm.playTitle();
-          unlocked = started || Boolean(ctx && ctx.state === 'running');
+          unlocked = started || unlocked;
         }
         if (unlocked) {
           titleBgmUnlocked = true;
@@ -1414,18 +1456,20 @@
 
     if (el.btnTitleBgmHint) {
       el.btnTitleBgmHint.addEventListener('click', async () => {
-        titleBgmUnlocked = true;
-        cleanupGestureUnlock();
-        sound.ensureContext();
+        let unlocked = await tryUnlockAudioContext();
         if (!audioSettings.muted && audioSettings.bgmVolume > 0) {
-          await bgm.playTitle();
+          const started = await bgm.playTitle();
+          unlocked = started || unlocked;
+        }
+        if (unlocked) {
+          titleBgmUnlocked = true;
+          cleanupGestureUnlock();
         }
         syncAudioControlsUI();
       });
     }
 
     // 初回ロード時は AudioContext を先走って生成せず（Autoplay 警告回避）、初回ジェスチャで解放する
-    syncAudioControlsUI();
 
     // ミュート切替
     el.btnMute.addEventListener('click', () => {
@@ -1459,7 +1503,8 @@
         syncAudioControlsUI();
       });
       el.sliderSeVolume.addEventListener('change', () => {
-        if (!audioSettings.muted && audioSettings.seVolume > 0 && state.phase !== 'PAUSED') {
+        if (!audioSettings.muted && audioSettings.seVolume > 0) {
+          sound.ensureContext();
           sound.playVolumeTest();
         }
       });
@@ -1497,15 +1542,13 @@
         saveAudioSettings(audioSettings);
         sound.setSeVolume(audioSettings.seVolume / 100);
         sound.setMuted(false);
-        if (state.phase !== 'PAUSED') {
-          sound.ensureContext();
-        }
+        sound.ensureContext();
         bgm.setVolume(audioSettings.bgmVolume / 100);
         bgm.setMuted(false);
         if (state.phase !== 'PAUSED') {
           ensureBgmPlayingForCurrentPhase();
-          sound.playVolumeTest();
         }
+        sound.playVolumeTest();
         syncAudioControlsUI();
       });
     }
@@ -1516,9 +1559,7 @@
         sound.pause();
       } else {
         lastFrameTime = performance.now();
-        if (state.phase !== 'PAUSED') {
-          sound.resume();
-        }
+        sound.resume();
         if (
           state.phase === 'TITLE' ||
           state.phase === 'STARTING' ||
@@ -1547,7 +1588,7 @@
         state.dragCell = null;
         releaseActivePointerCapture();
         bgm.pause();
-        sound.pause();
+        sound.stopAll();
         scenery.setMode(false);
         if (state.prevPhaseBeforePause === 'RUNNING') {
           UI.renderGrid(el, state);
@@ -1579,6 +1620,7 @@
       titleBgmUnlocked = true;
       if (cleanupGestureUnlockFn) cleanupGestureUnlockFn();
       flushPauseWaiters();
+      sound.stopAll();
       sound.resume();
       bgm.playTitle();
       syncAudioControlsUI();
@@ -1589,22 +1631,15 @@
       state.latestShareText = '';
       releaseActivePointerCapture();
       if (el.fxLayer) el.fxLayer.innerHTML = '';
+      if (el.carBody) el.carBody.classList.remove('shake-effect');
       if (el.doorsContainer) el.doorsContainer.classList.remove('doors-open');
       if (el.strollerNotice) el.strollerNotice.classList.add('hidden');
       if (el.elderlyNotice) el.elderlyNotice.classList.add('hidden');
       scenery.setNight(false);
-      scenery.setMode(false, 'city');
+      scenery.reset('city');
       if (el.modalDeparture) el.modalDeparture.classList.add('hidden');
       if (el.modalTransferBanner) el.modalTransferBanner.classList.add('hidden');
-      if (el.modalResultDetail) el.modalResultDetail.classList.add('hidden');
-      if (el.modalData) el.modalData.classList.add('hidden');
-      if (el.modalSound) el.modalSound.classList.add('hidden');
-      if (el.modalModHelp) el.modalModHelp.classList.add('hidden');
-      if (el.modalHowto) el.modalHowto.classList.add('hidden');
-      if (el.modalAbout) el.modalAbout.classList.add('hidden');
-      if (el.modalRankHelp) el.modalRankHelp.classList.add('hidden');
-      if (el.modalHsDeleteConfirm) el.modalHsDeleteConfirm.classList.add('hidden');
-      if (el.modalHighscore) el.modalHighscore.classList.add('hidden');
+      closeAllSubModals();
       el.modalPause.classList.add('hidden');
       el.modalResult.classList.add('hidden');
       el.modalTitle.classList.remove('hidden');
@@ -1657,7 +1692,8 @@
       const startSt = STATIONS[state.startStationIdx] || STATIONS[0];
       const endSt = STATIONS[state.endStationIdx] || STATIONS[25];
       const diff = DIFFICULTIES[state.diffKey] || DIFFICULTIES.normal;
-      ctx.fillText(`${startSt.name}発 → ${endSt.name}行 / 難易度: ${diff.label} (${diff.timeMult}倍)`, 30, 92);
+      const typeLabel = Puzzle.isRapidCourse(state.courseKey) ? '快速' : '各停';
+      ctx.fillText(`${typeLabel} ${startSt.name}発 → ${endSt.name}行 / 難易度: ${diff.label} (${diff.timeMult}倍)`, 30, 92);
       ctx.fillStyle = '#fde047';
       ctx.font = 'bold 24px sans-serif';
       ctx.fillText(`SCORE: ${state.score.toLocaleString()} pt   遅延: ${Puzzle.formatMinSec(state.delaySec)}`, 30, 140);
@@ -1965,14 +2001,64 @@
         UI.syncHighScoreSelectionUI(el);
       });
     }
+    const syncCurrentHighScoreBannerFromStore = (store) => {
+      if (!state.highScoreResult || !state.highScoreResult.record) {
+        UI.updateResultRecordBanner(el, state, state.phase === 'CLEAR');
+        return;
+      }
+      const rec = state.highScoreResult.record;
+      const curKey = Puzzle.getScoreRecordKey(rec);
+      const overallList = (store && Array.isArray(store.overall)) ? store.overall : [];
+      const courseList =
+        store && store.byCourse && Array.isArray(store.byCourse[rec.courseKey])
+          ? store.byCourse[rec.courseKey]
+          : [];
+      const overallIdx = overallList.findIndex((item) => Puzzle.getScoreRecordKey(item) === curKey);
+      const courseIdx = courseList.findIndex((item) => Puzzle.getScoreRecordKey(item) === curKey);
+      const overallRank = overallIdx >= 0 ? overallIdx + 1 : null;
+      const courseRank = courseIdx >= 0 ? courseIdx + 1 : null;
+
+      if (overallRank === null && courseRank === null) {
+        state.highScoreResult = null;
+      } else {
+        state.highScoreResult = {
+          ...state.highScoreResult,
+          store,
+          overallRank,
+          courseRank,
+          isNewOverallBest: Boolean(state.highScoreResult.isNewOverallBest && overallRank === 1),
+          isNewCourseBest: Boolean(state.highScoreResult.isNewCourseBest && courseRank === 1),
+        };
+      }
+      UI.updateResultRecordBanner(el, state, state.phase === 'CLEAR');
+    };
+
+    let hsConfirmMode = 'selected'; // 'selected' | 'clear'
+    const openHsConfirmModal = (mode, count = 0) => {
+      if (!el.modalHsDeleteConfirm) return;
+      hsConfirmMode = mode;
+      if (mode === 'clear') {
+        if (el.hsDeleteConfirmTitle) el.hsDeleteConfirmTitle.textContent = 'すべてのハイスコアを初期化';
+        if (el.hsDeleteConfirmMsg) {
+          el.hsDeleteConfirmMsg.textContent =
+            '保存されているハイスコア記録（総合・シナリオ別・輸送実績）をすべて削除しますか？この操作は元に戻せません。';
+        }
+        if (el.btnConfirmHsDelete) el.btnConfirmHsDelete.textContent = 'すべて初期化する';
+      } else {
+        if (el.hsDeleteConfirmTitle) el.hsDeleteConfirmTitle.textContent = '選択したハイスコアを削除';
+        if (el.hsDeleteConfirmMsg) {
+          el.hsDeleteConfirmMsg.textContent = `選択した ${count}件 の記録を総合ランキング（TOP20）から削除しますか？この操作は元に戻せません。`;
+        }
+        if (el.btnConfirmHsDelete) el.btnConfirmHsDelete.textContent = '削除する';
+      }
+      el.modalHsDeleteConfirm.classList.remove('hidden');
+    };
+
     if (el.btnHsDeleteSelected && el.modalHsDeleteConfirm) {
       el.btnHsDeleteSelected.addEventListener('click', () => {
         const keys = getSelectedOverallKeys();
         if (keys.length === 0) return;
-        if (el.hsDeleteConfirmMsg) {
-          el.hsDeleteConfirmMsg.textContent = `選択した ${keys.length}件 の記録を総合ランキング（TOP20）から削除しますか？この操作は元に戻せません。`;
-        }
-        el.modalHsDeleteConfirm.classList.remove('hidden');
+        openHsConfirmModal('selected', keys.length);
       });
     }
     if (el.btnCancelHsDelete && el.modalHsDeleteConfirm) {
@@ -1982,26 +2068,20 @@
     }
     if (el.btnConfirmHsDelete && el.modalHsDeleteConfirm) {
       el.btnConfirmHsDelete.addEventListener('click', () => {
-        const keys = getSelectedOverallKeys();
         el.modalHsDeleteConfirm.classList.add('hidden');
+        if (hsConfirmMode === 'clear') {
+          const cleared = Puzzle.clearHighScores();
+          syncCurrentHighScoreBannerFromStore(cleared);
+          UI.renderHighScoreModal(el, cleared, getCurrentTrainKey());
+          showToast('🗑 ハイスコア記録を初期化しました');
+          return;
+        }
+        const keys = getSelectedOverallKeys();
         if (keys.length === 0) return;
         const updated = Puzzle.deleteOverallHighScores(keys);
-        if (state.highScoreResult && state.highScoreResult.record) {
-          const curKey = Puzzle.getScoreRecordKey(state.highScoreResult.record);
-          if (keys.includes(curKey) && el.resRecordBanner) {
-            el.resRecordBanner.classList.add('hidden');
-            state.highScoreResult = null;
-          }
-        }
+        syncCurrentHighScoreBannerFromStore(updated);
         UI.renderHighScoreModal(el, updated, getCurrentTrainKey());
         showToast(`🗑 選択した ${keys.length}件 の記録を削除しました`);
-      });
-    }
-    if (el.modalHsDeleteConfirm) {
-      el.modalHsDeleteConfirm.addEventListener('click', (e) => {
-        if (e.target === el.modalHsDeleteConfirm) {
-          el.modalHsDeleteConfirm.classList.add('hidden');
-        }
       });
     }
     if (el.btnOpenRankHelp && el.modalRankHelp) {
@@ -2012,13 +2092,6 @@
     if (el.btnCloseRankHelp && el.modalRankHelp) {
       el.btnCloseRankHelp.addEventListener('click', () => {
         el.modalRankHelp.classList.add('hidden');
-      });
-    }
-    if (el.modalRankHelp) {
-      el.modalRankHelp.addEventListener('click', (e) => {
-        if (e.target === el.modalRankHelp) {
-          el.modalRankHelp.classList.add('hidden');
-        }
       });
     }
 
@@ -2059,6 +2132,7 @@
             showToast(`⚠️ ${res.error || 'CSVの読み込みに失敗しました'}`, 'warning');
             return;
           }
+          syncCurrentHighScoreBannerFromStore(res.store);
           UI.renderHighScoreModal(el, res.store, getCurrentTrainKey());
           const skipNote = res.skippedCount > 0 ? `（無効行 ${res.skippedCount}件除外）` : '';
           const scoreCnt = res.importedScoreCount || 0;
@@ -2079,12 +2153,7 @@
 
     if (el.btnHsClear) {
       el.btnHsClear.addEventListener('click', () => {
-        if (!global.confirm('保存されているハイスコア記録をすべて削除しますか？')) return;
-        const cleared = Puzzle.clearHighScores();
-        state.highScoreResult = null;
-        if (el.resRecordBanner) el.resRecordBanner.classList.add('hidden');
-        UI.renderHighScoreModal(el, cleared, getCurrentTrainKey());
-        showToast('🗑 ハイスコア記録を初期化しました');
+        openHsConfirmModal('clear');
       });
     }
 
@@ -2104,6 +2173,8 @@
     bindBackdropClose(el.modalHowto);
     bindBackdropClose(el.modalAbout);
     bindBackdropClose(el.modalResultDetail);
+    bindBackdropClose(el.modalRankHelp);
+    bindBackdropClose(el.modalHsDeleteConfirm);
     bindBackdropClose(el.modalHighscore, () => {
       if (el.modalRankHelp) el.modalRankHelp.classList.add('hidden');
       if (el.modalHsDeleteConfirm) el.modalHsDeleteConfirm.classList.add('hidden');
@@ -2159,7 +2230,6 @@
     }
 
     UI.initGridDOM(el);
-    UI.buildDataTable(el, state.direction, state.odMode, state.courseKey);
     bindGridPointerEvents();
     bindUIEvents();
     const handleLayoutResize = () => {

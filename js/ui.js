@@ -12,6 +12,7 @@
     OD_MODES,
     DIFFICULTIES,
     RAPID_CONNECTIONS,
+    SCENARIO_BOARD_MULTS,
     SHARE_GAME_URL,
     SHARE_HASHTAG,
     TRAIN_ORDER,
@@ -118,7 +119,6 @@
       transferBannerSub: document.getElementById('transfer-banner-sub'),
       screenshotFlash: document.getElementById('screenshot-flash'),
       screenshotToast: document.getElementById('screenshot-toast'),
-      dataTableSubtitle: document.getElementById('data-table-subtitle'),
       dataTableBody: document.getElementById('data-table-body'),
 
       resBadge: document.getElementById('res-badge'),
@@ -186,6 +186,7 @@
       inputHsCsv: document.getElementById('input-hs-csv'),
       btnHsClear: document.getElementById('btn-hs-clear'),
       modalHsDeleteConfirm: document.getElementById('modal-hs-delete-confirm'),
+      hsDeleteConfirmTitle: document.getElementById('hs-delete-confirm-title'),
       hsDeleteConfirmMsg: document.getElementById('hs-delete-confirm-msg'),
       btnCancelHsDelete: document.getElementById('btn-cancel-hs-delete'),
       btnConfirmHsDelete: document.getElementById('btn-confirm-hs-delete'),
@@ -528,12 +529,34 @@
     el.ffHint.textContent = recov > 0 ? `遅延-${recov}秒` : state.targetBlocked === 0 ? '準備OK!' : '即到着';
   }
 
+  function updateResultRecordBanner(el, state, isClear) {
+    if (!el || !el.resRecordBanner) return;
+    const hs = isClear ? state.highScoreResult : null;
+    let bannerMsg = '';
+    if (hs) {
+      if (hs.isNewOverallBest && hs.isNewCourseBest) {
+        bannerMsg = '👑 総合ランキング1位 & シナリオ自己ベスト更新！';
+      } else if (hs.isNewCourseBest && hs.overallRank) {
+        bannerMsg = `🏆 シナリオ自己ベスト更新！（総合 ${hs.overallRank}位）`;
+      } else if (hs.isNewCourseBest) {
+        bannerMsg = '🏆 シナリオ自己ベスト更新！（1位）';
+      } else if (hs.overallRank && hs.courseRank) {
+        bannerMsg = `✨ 総合 ${hs.overallRank}位 & シナリオ ${hs.courseRank}位 ランクイン！`;
+      } else if (hs.overallRank) {
+        bannerMsg = `✨ 総合ランキング ${hs.overallRank}位 ランクイン！`;
+      } else if (hs.courseRank) {
+        bannerMsg = `✨ シナリオランキング ${hs.courseRank}位 ランクイン！`;
+      }
+    }
+    el.resRecordBanner.textContent = bannerMsg;
+    el.resRecordBanner.classList.toggle('hidden', !bannerMsg);
+  }
+
   function renderResultModal(el, state, isClear) {
     const endSt = STATIONS[state.endStationIdx];
     const dir = DIRECTIONS[state.direction] || DIRECTIONS.down;
     const typeLabel = Puzzle.isRapidCourse(state.courseKey) ? '快速' : '各停';
-    const smoothRate =
-      state.totalAlighted > 0 ? Math.round((state.smoothAlighted / state.totalAlighted) * 100) : 100;
+    const smoothRate = Puzzle.calcSmoothRate(state.smoothAlighted, state.totalAlighted);
 
     let rank = 'D';
     let rankColor = 'text-rose-500';
@@ -578,27 +601,7 @@
     el.resChain.textContent = `${state.maxChain}人`;
 
     // ハイスコア更新・ランクインバナー描画
-    if (el.resRecordBanner) {
-      const hs = isClear ? state.highScoreResult : null;
-      let bannerMsg = '';
-      if (hs) {
-        if (hs.isNewOverallBest && hs.isNewCourseBest) {
-          bannerMsg = '👑 総合ランキング1位 & シナリオ自己ベスト更新！';
-        } else if (hs.isNewCourseBest && hs.overallRank) {
-          bannerMsg = `🏆 シナリオ自己ベスト更新！（総合 ${hs.overallRank}位）`;
-        } else if (hs.isNewCourseBest) {
-          bannerMsg = '🏆 シナリオ自己ベスト更新！（1位）';
-        } else if (hs.overallRank && hs.courseRank) {
-          bannerMsg = `✨ 総合 ${hs.overallRank}位 & シナリオ ${hs.courseRank}位 ランクイン！`;
-        } else if (hs.overallRank) {
-          bannerMsg = `✨ 総合ランキング ${hs.overallRank}位 ランクイン！`;
-        } else if (hs.courseRank) {
-          bannerMsg = `✨ シナリオランキング ${hs.courseRank}位 ランクイン！`;
-        }
-      }
-      el.resRecordBanner.textContent = bannerMsg;
-      el.resRecordBanner.classList.toggle('hidden', !bannerMsg);
-    }
+    updateResultRecordBanner(el, state, isClear);
 
     // SNSシェア文言生成 & Xポストリンク更新
     const shareText = buildResultShareText(state, isClear);
@@ -616,7 +619,7 @@
     let scenarioTag = '';
     if (state.courseKey === 'tachikawa_nakahara') scenarioTag = '・終電間際';
     else if (state.courseKey === 'nishikunitachi') scenarioTag = '・朝ラッシュ';
-    else if (state.courseKey === 'rapid_inagi') scenarioTag = '・立川行連絡';
+    else if (state.courseKey === 'rapid_inagi') scenarioTag = '・立川連絡';
     else if (state.courseKey === 'rapid_noborito') scenarioTag = '・各停連絡';
 
     if (el.resMeta) {
@@ -999,13 +1002,17 @@
     if (!st) return '';
     const list = st.transfers ? [...st.transfers] : [];
     if (state && Puzzle.isRapidCourse(state.courseKey)) {
-      if (state.courseKey === 'rapid_inagi' && st.num === '18') {
+      const downTransferSt = STATIONS[RAPID_CONNECTIONS.down.transferStationIdx];
+      const upTransferSt = STATIONS[RAPID_CONNECTIONS.up.transferStationIdx];
+      const isDownTransfer = downTransferSt && st.id === downTransferSt.id;
+      const isUpTransfer = upTransferSt && st.id === upTransferSt.id;
+      if (state.courseKey === 'rapid_inagi' && isDownTransfer) {
         list.push('立川行各駅停車連絡');
-      } else if (state.courseKey === 'rapid_noborito' && st.num === '14') {
+      } else if (state.courseKey === 'rapid_noborito' && isUpTransfer) {
         list.push('立川発各駅停車連絡');
-      } else if (state.direction === 'down' && st.num === '18') {
+      } else if (state.direction === 'down' && isDownTransfer) {
         list.push('各駅停車連絡');
-      } else if (state.direction === 'up' && st.num === '14') {
+      } else if (state.direction === 'up' && isUpTransfer) {
         list.push('各駅停車連絡');
       }
     }
@@ -1042,18 +1049,10 @@
     const stats = Puzzle.computeDirectionStats(dir.key, mode.key, isRapid, { g1Active, peakTarget, courseKey });
     const routeStopSet = new Set(routeStops);
 
-    // トップ画面の「他の行き先を見る」展開状態に応じて、モーダル内列車切替ボタンの表示/非表示を同期
-    const downMoreOpen = el.moreRoutesDown ? !el.moreRoutesDown.classList.contains('hidden') : false;
-    const upMoreOpen = el.moreRoutesUp ? !el.moreRoutesUp.classList.contains('hidden') : false;
-
+    // モーダル内ではタイトル画面の折り畳み状態に依存せず全15列車を常時切替可能にする
     document.querySelectorAll('.data-train-opt').forEach((b) => {
       const active = b.dataset.dir === dir.key && b.dataset.course === courseKey;
-      const extraDir = b.dataset.extra;
-      const shouldHide =
-        !active &&
-        ((extraDir === 'down' && !downMoreOpen) || (extraDir === 'up' && !upMoreOpen));
-
-      b.className = `${shouldHide ? 'hidden ' : ''}data-train-opt px-2 py-1 rounded-lg border text-[10px] sm:text-[11px] transition ${
+      b.className = `data-train-opt px-2 py-1 rounded-lg border text-[10px] sm:text-[11px] transition ${
         active
           ? 'font-black border-yellow-400 bg-yellow-400/20 text-yellow-200'
           : 'font-bold border-slate-700 bg-slate-800/80 text-slate-300 hover:border-slate-500'
@@ -1087,25 +1086,16 @@
       const isTerminal = stopPos === routeStops.length - 1;
       const nextStopIdx = !isTerminal && stopPos >= 0 ? routeStops[stopPos + 1] : idx;
       const leg = !isTerminal && isStoppingHere ? Puzzle.getLegInfo(idx, nextStopIdx) : { time: 0 };
-      const stdSec = leg.time > 0 ? +(leg.time * DIFFICULTIES.normal.timeMult).toFixed(1) : 0;
+      const stdSec = leg.time > 0 ? Math.max(3.5, +(leg.time * DIFFICULTIES.normal.timeMult).toFixed(1)) : 0;
 
       let expText = '—';
       if (isStoppingHere && !isTerminal) {
         let suffix = '';
-        if (courseKey === 'tachikawa_nakahara' && !isDown) {
-          if (idx === 25) suffix = ' (2.2倍)';
-          else if (idx === 23 || idx === 22 || idx === 21) suffix = ' (0.7倍)';
-          else if (idx === 18 || idx === 17 || idx === 16 || idx === 14 || idx === 12 || idx === 11 || idx === 10) suffix = ' (0.3倍)';
-          else if (idx === 8) suffix = ' (0.25倍)';
-        } else if (courseKey === 'nishikunitachi' && !isDown) {
-          if (idx === 24) suffix = ' (10倍)';
-          else if (idx <= 23 && idx >= 14) suffix = ' (2.5倍)';
-          else if (idx <= 13 && idx >= 11) suffix = ' (1.2倍)';
-          else if (idx === 10) suffix = ' (1.4倍)';
-          else if (idx <= 6 && idx >= 1) suffix = ' (1.5倍)';
-        } else if (!isDown && (courseKey === 'rapid' || courseKey === 'full') && idx === 25) {
-          suffix = ' (1.5倍)';
-        } else if (courseKey === 'rapid_noborito' && idx === 13) {
+        const scenarioMults =
+          SCENARIO_BOARD_MULTS && SCENARIO_BOARD_MULTS[`${dir.key}:${courseKey}`];
+        if (scenarioMults && Object.prototype.hasOwnProperty.call(scenarioMults, idx)) {
+          suffix = ` (${scenarioMults[idx]}倍)`;
+        } else if (courseKey === 'rapid_noborito' && idx === RAPID_CONNECTIONS.up.transferStationIdx) {
           suffix = ' (乗継込)';
         }
         if (g1Active && idx === global.NanbuData.G1_CONFIG.stationIdx) {
@@ -1176,7 +1166,7 @@
             </div>
           </div>
         </td>
-        <td class="p-1.5 text-right tabular-nums font-bold ${!isStoppingHere ? 'opacity-50 text-slate-500' : leg.time === 7 ? 'text-rose-400' : leg.time >= 13 ? 'text-emerald-400' : 'text-slate-200'}">
+        <td class="p-1.5 text-right tabular-nums font-bold ${!isStoppingHere ? 'opacity-50 text-slate-500' : leg.time <= 7 ? 'text-rose-400' : leg.time >= 13 ? 'text-emerald-400' : 'text-slate-200'}">
           ${!isStoppingHere ? '通過' : stdSec > 0 ? stdSec + '秒' : '終点'}
         </td>
         <td class="p-1.5 text-right tabular-nums font-bold ${!isStoppingHere ? 'opacity-50 text-slate-500' : 'text-sky-300'}">${expText}</td>
@@ -1218,8 +1208,9 @@
     const controlsH = getOuterHeight(el.controlsPanel);
 
     const availStageW = Math.max(0, maxCarW - carChromeX);
-    const availStageH = Math.max(0, availMainH - sceneryH - doorsH - announceH - controlsH - carChromeY);
-    if (availStageW <= 0 || availStageH <= 0) return;
+    if (availStageW <= 0) return;
+    const rawAvailStageH = availMainH - sceneryH - doorsH - announceH - controlsH - carChromeY;
+    const availStageH = rawAvailStageH > 0 ? rawAvailStageH : Math.max(90, Math.floor(availMainH * 0.35));
 
     const targetGridW = Math.min(availStageW, (availStageH * COLS) / ROWS);
     const targetGridH = Math.round((targetGridW * ROWS) / COLS);
@@ -1262,6 +1253,7 @@
     const url = SHARE_GAME_URL || 'https://seasideexp.github.io/nanbu-line-puzzle/';
     const tag = SHARE_HASHTAG || '#NanbuL_Puzzle';
 
+    // SNS検索汚染（実路線の運行情報検索等への混入）防止のため、路線名を含めない短縮表記を維持
     return [
       `【なぜ混んでる？】${routeLabel} ${statusText}`,
       `運行評価：${evalInfo.rank} / 最終スコア：${Number(state.score || 0).toLocaleString()} pt / 遅延 ${Puzzle.formatMinSec(state.delaySec)}（スムーズ降車率 ${smoothRate}%）`,
@@ -1532,6 +1524,7 @@
     updateHUD,
     updateTimerUI,
     updateFastForwardHint,
+    updateResultRecordBanner,
     renderResultModal,
     buildResultShareText,
     renderHighScoreModal,

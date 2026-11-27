@@ -4,6 +4,18 @@
 
 ---
 
+- **Ver.0.90** (2026-11-27):
+  - **全体コードレビューに基づく不具合修正（第1回）および重複解消・コード整理（第2回）を一括実施 (`index.html`, `styles.css`, `js/data.js`, `js/sound.js`, `js/bgm.js`, `js/puzzle.js`, `js/ui.js`, `js/app.js`, `README.md`)**:
+    - **音声・BGMライフサイクル修正 (`js/sound.js`, `js/bgm.js`, `js/app.js`)**：`SoundEngine.stopAll()` および `TrainPuzzleBgmPlayer` の単音・パーカッション用世代バス（`_resetDirectBus`）を導入し、一時停止→タイトル復帰／リスタート時の予約済みSE・BGMパーカッション残響漏れを根本解消。一時停止メニューの音量設定モーダルからもSEテスト音を試聴できるよう改善し、初回ジェスチャBGM解放および案内ボタン押下時に `AudioContext.resume()` の実完了を確認してからリスナー解除するよう修正。
+    - **ハイスコア・集計・CSV・進行整合の修正 (`js/puzzle.js`, `js/ui.js`, `js/app.js`, `index.html`)**：ドア前地蔵をハイスコア累計輸送実績へも含めて詳細レポートと一致化。同点スコアでの「自己ベスト更新！」誤表示を `>` 判定へ修正。総合ランキング削除（シナリオ別は維持）・CSV読込・初期化後にリザルト画面の更新バナー順位を再照合同期し、記録初期化もカスタム確認モーダル（`#modal-hs-delete-confirm` 共用）へ統一。CSVインポートの `stats_*` 部分不正行・空欄ランク自動評価・不正 `diffKey` 検証を強化。満員積み残し運転中止時の未発車乗客ロールバック、タイマー0到達フレームの余分な車窓更新抑止、`startGame()` の全サブモーダル一括クローズ＆背景クリック閉じのガード統一、「南武線 各駅情報」モーダルでの全15列車常時表示を実施。
+    - **二重管理解消・防御補強・重複／バグ内包コード整理 (`js/data.js`, `js/puzzle.js`, `js/ui.js`, `js/bgm.js`, `js/app.js`, `styles.css`, `index.html`)**：シナリオ別駅ごとの期待乗車倍率を `SCENARIO_BOARD_MULTS`（`js/data.js`）へ一元化して `puzzle.js` / `ui.js` から共通参照。`formatTransferSuffix()` の駅番号文字列直書きを駅ID・`RAPID_CONNECTIONS` 参照へ統一し、`renderResultModal()` での `Puzzle.calcSmoothRate()` 利用・列車表記の統一・`syncCarLayout()` 極小縦画面フォールバック・簡易スクショ種別表記・`bgm.setVolume()` の `NaN` 防御を追加。あわせてバグ内包の未使用 `bgm.setMode()`、重複定数・重複戻り値・未使用引数・冗長呼び出し・旧CSS残骸（`.led-local`）および重複インラインスタイルを整理（将来拡張向けの準備定義は維持）。
+
+- **Ver.0.89** (2026-11-27):
+  - **車窓背景システムを「駅固有ID＋区間タイムライン方式」へ完全刷新 (`js/data.js`, `js/scenery.js`, `js/app.js`, `index.html`, `README.md`, `AGENTS.md`)**:
+    - **データ層への分離 (`js/data.js`)**：全26駅へ不変の駅固有ID（`JN01`〜`JN26`）を付与し、駅停車時景観（`stations`）および隣接駅ペア `'fromId>toId'` ごとの区間タイムライン（`segments`）を宣言的に管理する `SCENERY_CONFIG`（ならびに将来拡張用の `BASE_STATION_COUNT`・`EXTRA_SEGMENT_LEGS`）を追加。
+    - **路線グラフ＆タイムライン解決エンジン導入 (`js/scenery.js`)**：従来の連続数値座標ベース（`getSceneryModeAtPos` / `calcTrackPosition`）を廃止し、駅固有IDベースの無向路線グラフ（`buildTrackGraph`）・BFS経路＋営業キロ比例区間解決（`resolveTrackSegment`）・タイムライン正規化（単一文字列／累積比率 `to`／相対重み `ratio`／実距離 `km` 対応の `normalizeTimeline`）・逆方向自動進捗反転（`1 - localT`）を備えた `getSegmentScenery` / `getSceneryForLeg` / `getStationSceneryMode` へ完全置換。
+    - **上部1面横スクロール描画の維持と描画安定化 (`js/scenery.js`, `js/app.js`)**：本ゲーム固有の上部1面横長車窓（昼・夜間対応の5景観：`city` / `tower` / `residential80` / `mixed50` / `bridge`）を維持したまま、`SceneryRenderer.reset()` 追加および `resize()` 時の即時再描画に対応。`app.js` の走行・停車・開始・タイトル復帰時の車窓連携を駅固有IDベースの新APIへ移行。
+
 - **Ver.0.88** (2026-11-26):
   - **サウンド・BGMライフサイクル、ハイスコアCSV、ゲーム進行・UI・スクショ周りの不具合14点を一括修正 (`index.html`, `styles.css`, `js/app.js`, `js/bgm.js`, `js/sound.js`, `js/synth.js`, `js/puzzle.js`, `js/ui.js`, `js/data.js`, `README.md`)**:
     - **初回ジェスチャBGM解放の空振りを防止 (`js/app.js`)**：修飾キー・`Escape`・`Tab` 等の非アクティベーションキーを除外し、`AudioContext` が実際に `running` へ遷移した場合のみ `titleBgmUnlocked` 確定・リスナー解除を行うよう修正（モバイルSafariでの `pointerdown` 空振り時も `touchend`/`click` で確実に解放）。

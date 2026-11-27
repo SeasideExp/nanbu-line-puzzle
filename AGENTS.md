@@ -44,11 +44,11 @@
 
 - `index.html`: DOM構造、LCDディスプレイ・車窓・5×8車両盤面・ドア＆ホーム・フッターおよび各種モーダル（タイトル・一時停止・リザルト・全26駅ODデータ表）の配置、バージョン表記
 - `styles.css`: CSS変数、南武線3色帯、5×8グリッド・座席／ドア前エリア・乗客トークン・ステータスバッジ・各種キーフレームアニメーション・ドア開閉トランジション・スクロールバー装飾
-- `js/data.js` (`window.NanbuData`): バージョン定数、盤面設定（5×8・定員40・ピーク目標35・ドア位置・許容遅延上限）、5ゾーン配色、南武線全26駅の駅間距離・標準走行時間・他線乗換情報、第13回大都市交通センサス実OD行列（`OD_MATRIX_13`・26×26有向行列）、快速停車駅（`RAPID_STOPS`）・快速通過区間所要時間（`RAPID_SEGMENT_TIMES`）・緩急接続定義（`RAPID_CONNECTIONS`）、運行方向・難易度・コース定義
+- `js/data.js` (`window.NanbuData`): バージョン定数、盤面設定（5×8・定員40・ピーク目標35・ドア位置・許容遅延上限）、南武線全26駅の駅固有ID（`JN01`〜`JN26`）・駅間距離・標準走行時間・他線乗換情報、駅固有IDベースの車窓景観タイムライン定義（`SCENERY_CONFIG`・`BASE_STATION_COUNT`・`EXTRA_SEGMENT_LEGS`）、第13回大都市交通センサス実OD行列（`OD_MATRIX_13`・26×26有向行列）、快速停車駅（`RAPID_STOPS`）・快速通過区間所要時間（`RAPID_SEGMENT_TIMES`）・緩急接続定義（`RAPID_CONNECTIONS`）、運行方向・難易度・コース定義
 - `js/sound.js` (`window.NanbuSound`): Web Audio API 軽量シンセサイザー（各種SE、音量設定の永続化、BGMとの単一 AudioContext 共有・ミュート／一時停止制御）
 - `js/synth.js` (`window.NanbuSynth`): BGM用の非線形ユニゾン＆24dB/octフィルターシンセサイザー（`UnisonFilterSynth`）
 - `js/bgm.js` (`window.NanbuBgm`): Web Audio API 2モードBGMシーケンサー（`TrainPuzzleBgmPlayer`、タイトル84 BPM／本編104 BPM・開始遅延・ポーズ／ミュート連動）
-- `js/scenery.js` (`window.NanbuScenery`): 車窓風景 Canvas レンダラー（DPR対応リサイズ、滑らかな加減速補間、川崎〜立川の街並み描画、南多摩〜府中本町間の多摩川鉄橋モード）
+- `js/scenery.js` (`window.NanbuScenery`): 駅固有IDベースの路線グラフ＆区間タイムライン解決エンジン（`normalizeTimeline`・`buildTrackGraph`・`resolveTrackSegment`・`getSegmentScenery`・`getSceneryForLeg`・`getStationSceneryMode`）および上部1面横スクロール車窓 Canvas レンダラー（`SceneryRenderer`：DPR対応リサイズ、滑らかな加減速補間、昼・夜間対応の5景観描画）
 - `js/puzzle.js` (`window.NanbuPuzzle`): DOM非依存のパズル・運行ロジック（空盤面生成、座席／ドア前判定、各停・快速の停車駅リスト生成および区間情報取得、4近傍BFSリアルタイム降車到達判定、降車対象仕分け、種別・緩急接続対応の有効OD行列構築、第13回実ODからの2段階確率乗客生成［確率的丸め＋全停車駅最低1人乗車保証＋最大40マス保証］、ドア付近優先の空きマス配置、早送り遅延回復計算、クリアランク判定）
 - `js/ui.js` (`window.NanbuUI`): DOM参照キャッシュ、盤面セル生成、乗客トークンおよび到達バッジ（`OK` / `!詰`）描画、上下線・種別連動のLCD・路線図ストリップ・スコア／車内人数／遅延ゲージ・タイマー・早送りボタン更新、フローティングテキスト・画面振動演出、リザルトモーダルおよび種別停車駅路線図・各駅情報表の描画
 - `js/app.js`: ゲーム状態管理、上下線運行進行フロー（開始 → 事前スケジュール生成 → 走行 → 到着・降車 → 乗車 → 次区間 → クリア／ゲームオーバー）、ドラッグ連続スワップ＆タップ移動操作、UIイベントバインド、`requestAnimationFrame` メインループ

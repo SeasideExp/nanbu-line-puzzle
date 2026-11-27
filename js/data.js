@@ -6,7 +6,7 @@
 (function (global) {
   'use strict';
 
-  const APP_VERSION = 'Ver.0.88';
+  const APP_VERSION = 'Ver.0.90';
 
   const SHARE_GAME_URL = 'https://seasideexp.github.io/nanbu-line-puzzle/';
   const SHARE_HASHTAG = '#NanbuL_Puzzle';
@@ -27,36 +27,115 @@
 
   /**
    * 南武線 全26駅・25区間の正確な距離(km)、標準制限時間(秒)、表示名、駅別グラデーションカラー
-   * 川崎(01)から立川(26)まで26駅すべて異なる色合いのグラデーションを割り当てる。
+   * id は不変の駅固有ID（JN01〜JN26）、num は表示用駅番号（01〜26）。
+   * 川崎(JN01)から立川(JN26)まで26駅すべて異なる色合いのグラデーションを割り当てる。
    */
   const STATIONS = [
-    { id: '01', num: '01', name: '川崎',       en: 'Kawasaki',            short: '川崎',     hub: true,  dist: 1.7, time: 11, bg: '#dc2626', dark: '#991b1b', transfers: ['東海道線', '京浜東北線', '京急線'] },
-    { id: '02', num: '02', name: '尻手',       en: 'Shitte',              short: '尻手',     hub: false, dist: 0.9, time: 7,  bg: '#e03a1e', dark: '#9e2412', transfers: ['南武支線'] },
-    { id: '03', num: '03', name: '矢向',       en: 'Yako',                short: '矢向',     hub: false, dist: 1.5, time: 10, bg: '#e34f17', dark: '#a3330c', transfers: [] },
-    { id: '04', num: '04', name: '鹿島田',     en: 'Kashimada',           short: '鹿島田',   hub: false, dist: 1.2, time: 9,  bg: '#e06310', dark: '#9e4208', transfers: [] },
-    { id: '05', num: '05', name: '平間',       en: 'Hirama',              short: '平間',     hub: false, dist: 1.3, time: 9,  bg: '#d97706', dark: '#964e04', transfers: [] },
-    { id: '06', num: '06', name: '向河原',     en: 'Mukaigawara',         short: '向河原',   hub: false, dist: 0.9, time: 7,  bg: '#ca8a04', dark: '#8a5b03', transfers: [] },
-    { id: '07', num: '07', name: '武蔵小杉',   en: 'Musashi-Kosugi',      short: '小杉',     hub: true,  dist: 1.7, time: 11, bg: '#b59a06', dark: '#7a6604', transfers: ['東横線', '目黒線', '横須賀線', '湘南新宿ライン'] },
-    { id: '08', num: '08', name: '武蔵中原',   en: 'Musashi-Nakahara',    short: '中原',     hub: false, dist: 1.3, time: 9,  bg: '#96a30b', dark: '#646e06', transfers: [] },
-    { id: '09', num: '09', name: '武蔵新城',   en: 'Musashi-Shinjo',      short: '新城',     hub: false, dist: 2.2, time: 13, bg: '#74a814', dark: '#4c730a', transfers: [] },
-    { id: '10', num: '10', name: '武蔵溝ノ口', en: 'Musashi-Mizonokuchi', short: '溝ノ口',   hub: true,  dist: 1.2, time: 9,  bg: '#4fa81e', dark: '#337311', transfers: ['田園都市線', '大井町線'] },
-    { id: '11', num: '11', name: '津田山',     en: 'Tsudayama',           short: '津田山',   hub: false, dist: 1.0, time: 8,  bg: '#2ca32c', dark: '#1c701c', transfers: [] },
-    { id: '12', num: '12', name: '久地',       en: 'Kuji',                short: '久地',     hub: false, dist: 1.3, time: 9,  bg: '#16a34a', dark: '#0f6e32', transfers: [] },
-    { id: '13', num: '13', name: '宿河原',     en: 'Shukugawara',         short: '宿河原',   hub: false, dist: 1.1, time: 8,  bg: '#10a368', dark: '#0a6e46', transfers: [] },
-    { id: '14', num: '14', name: '登戸',       en: 'Noborito',            short: '登戸',     hub: true,  dist: 2.2, time: 13, bg: '#0d9c82', dark: '#086957', transfers: ['小田急線'] },
-    { id: '15', num: '15', name: '中野島',     en: 'Nakanoshima',         short: '中野島',   hub: false, dist: 1.3, time: 9,  bg: '#0b969c', dark: '#076569', transfers: [] },
-    { id: '16', num: '16', name: '稲田堤',     en: 'Inadazutsumi',        short: '稲田堤',   hub: true,  dist: 1.6, time: 10, bg: '#088cb8', dark: '#055e7d', transfers: ['京王相模原線'] },
-    { id: '17', num: '17', name: '矢野口',     en: 'Yanokuchi',           short: '矢野口',   hub: false, dist: 1.7, time: 11, bg: '#0c7fd1', dark: '#08558f', transfers: [] },
-    { id: '18', num: '18', name: '稲城長沼',   en: 'Inagi-Naganuma',      short: '稲城長沼', hub: false, dist: 1.4, time: 10, bg: '#1d70e0', dark: '#124b99', transfers: [] },
-    { id: '19', num: '19', name: '南多摩',     en: 'Minami-Tama',         short: '南多摩',   hub: false, dist: 2.4, time: 14, bg: '#2e60eb', dark: '#1d40a3', transfers: [], isBridge: true },
-    { id: '20', num: '20', name: '府中本町',   en: 'Fuchuhommachi',       short: '府中本町', hub: true,  dist: 0.9, time: 7,  bg: '#4652f0', dark: '#2e37a8', transfers: ['武蔵野線'] },
-    { id: '21', num: '21', name: '分倍河原',   en: 'Bubaigawara',         short: '分倍河原', hub: true,  dist: 1.2, time: 9,  bg: '#6048ed', dark: '#412fa6', transfers: ['京王線'] },
-    { id: '22', num: '22', name: '西府',       en: 'Nishifu',             short: '西府',     hub: false, dist: 1.6, time: 10, bg: '#7742e8', dark: '#522ba3', transfers: [] },
-    { id: '23', num: '23', name: '谷保',       en: 'Yaho',                short: '谷保',     hub: false, dist: 1.4, time: 10, bg: '#8d3ee0', dark: '#61279c', transfers: [] },
-    { id: '24', num: '24', name: '矢川',       en: 'Yagawa',              short: '矢川',     hub: false, dist: 1.3, time: 9,  bg: '#a43ad6', dark: '#732496', transfers: [] },
-    { id: '25', num: '25', name: '西国立',     en: 'Nishi-Kunitachi',     short: '西国立',   hub: false, dist: 1.2, time: 9,  bg: '#b837c4', dark: '#82228c', transfers: [] },
-    { id: '26', num: '26', name: '立川',       en: 'Tachikawa',           short: '立川',     hub: true,  dist: 0,   time: 0,  bg: '#c934ab', dark: '#8f2179', transfers: ['中央線', '青梅線', '多摩モノレール'] },
+    { id: 'JN01', num: '01', name: '川崎',       en: 'Kawasaki',            short: '川崎',     hub: true,  dist: 1.7, time: 11, bg: '#dc2626', dark: '#991b1b', transfers: ['東海道線', '京浜東北線', '京急線'] },
+    { id: 'JN02', num: '02', name: '尻手',       en: 'Shitte',              short: '尻手',     hub: false, dist: 0.9, time: 7,  bg: '#e03a1e', dark: '#9e2412', transfers: ['南武支線'] },
+    { id: 'JN03', num: '03', name: '矢向',       en: 'Yako',                short: '矢向',     hub: false, dist: 1.5, time: 10, bg: '#e34f17', dark: '#a3330c', transfers: [] },
+    { id: 'JN04', num: '04', name: '鹿島田',     en: 'Kashimada',           short: '鹿島田',   hub: false, dist: 1.2, time: 9,  bg: '#e06310', dark: '#9e4208', transfers: [] },
+    { id: 'JN05', num: '05', name: '平間',       en: 'Hirama',              short: '平間',     hub: false, dist: 1.3, time: 9,  bg: '#d97706', dark: '#964e04', transfers: [] },
+    { id: 'JN06', num: '06', name: '向河原',     en: 'Mukaigawara',         short: '向河原',   hub: false, dist: 0.9, time: 7,  bg: '#ca8a04', dark: '#8a5b03', transfers: [] },
+    { id: 'JN07', num: '07', name: '武蔵小杉',   en: 'Musashi-Kosugi',      short: '小杉',     hub: true,  dist: 1.7, time: 11, bg: '#b59a06', dark: '#7a6604', transfers: ['東横線', '目黒線', '横須賀線', '湘南新宿ライン'] },
+    { id: 'JN08', num: '08', name: '武蔵中原',   en: 'Musashi-Nakahara',    short: '中原',     hub: false, dist: 1.3, time: 9,  bg: '#96a30b', dark: '#646e06', transfers: [] },
+    { id: 'JN09', num: '09', name: '武蔵新城',   en: 'Musashi-Shinjo',      short: '新城',     hub: false, dist: 2.2, time: 13, bg: '#74a814', dark: '#4c730a', transfers: [] },
+    { id: 'JN10', num: '10', name: '武蔵溝ノ口', en: 'Musashi-Mizonokuchi', short: '溝ノ口',   hub: true,  dist: 1.2, time: 9,  bg: '#4fa81e', dark: '#337311', transfers: ['田園都市線', '大井町線'] },
+    { id: 'JN11', num: '11', name: '津田山',     en: 'Tsudayama',           short: '津田山',   hub: false, dist: 1.0, time: 8,  bg: '#2ca32c', dark: '#1c701c', transfers: [] },
+    { id: 'JN12', num: '12', name: '久地',       en: 'Kuji',                short: '久地',     hub: false, dist: 1.3, time: 9,  bg: '#16a34a', dark: '#0f6e32', transfers: [] },
+    { id: 'JN13', num: '13', name: '宿河原',     en: 'Shukugawara',         short: '宿河原',   hub: false, dist: 1.1, time: 8,  bg: '#10a368', dark: '#0a6e46', transfers: [] },
+    { id: 'JN14', num: '14', name: '登戸',       en: 'Noborito',            short: '登戸',     hub: true,  dist: 2.2, time: 13, bg: '#0d9c82', dark: '#086957', transfers: ['小田急線'] },
+    { id: 'JN15', num: '15', name: '中野島',     en: 'Nakanoshima',         short: '中野島',   hub: false, dist: 1.3, time: 9,  bg: '#0b969c', dark: '#076569', transfers: [] },
+    { id: 'JN16', num: '16', name: '稲田堤',     en: 'Inadazutsumi',        short: '稲田堤',   hub: true,  dist: 1.6, time: 10, bg: '#088cb8', dark: '#055e7d', transfers: ['京王相模原線'] },
+    { id: 'JN17', num: '17', name: '矢野口',     en: 'Yanokuchi',           short: '矢野口',   hub: false, dist: 1.7, time: 11, bg: '#0c7fd1', dark: '#08558f', transfers: [] },
+    { id: 'JN18', num: '18', name: '稲城長沼',   en: 'Inagi-Naganuma',      short: '稲城長沼', hub: false, dist: 1.4, time: 10, bg: '#1d70e0', dark: '#124b99', transfers: [] },
+    { id: 'JN19', num: '19', name: '南多摩',     en: 'Minami-Tama',         short: '南多摩',   hub: false, dist: 2.4, time: 14, bg: '#2e60eb', dark: '#1d40a3', transfers: [], isBridge: true },
+    { id: 'JN20', num: '20', name: '府中本町',   en: 'Fuchuhommachi',       short: '府中本町', hub: true,  dist: 0.9, time: 7,  bg: '#4652f0', dark: '#2e37a8', transfers: ['武蔵野線'] },
+    { id: 'JN21', num: '21', name: '分倍河原',   en: 'Bubaigawara',         short: '分倍河原', hub: true,  dist: 1.2, time: 9,  bg: '#6048ed', dark: '#412fa6', transfers: ['京王線'] },
+    { id: 'JN22', num: '22', name: '西府',       en: 'Nishifu',             short: '西府',     hub: false, dist: 1.6, time: 10, bg: '#7742e8', dark: '#522ba3', transfers: [] },
+    { id: 'JN23', num: '23', name: '谷保',       en: 'Yaho',                short: '谷保',     hub: false, dist: 1.4, time: 10, bg: '#8d3ee0', dark: '#61279c', transfers: [] },
+    { id: 'JN24', num: '24', name: '矢川',       en: 'Yagawa',              short: '矢川',     hub: false, dist: 1.3, time: 9,  bg: '#a43ad6', dark: '#732496', transfers: [] },
+    { id: 'JN25', num: '25', name: '西国立',     en: 'Nishi-Kunitachi',     short: '西国立',   hub: false, dist: 1.2, time: 9,  bg: '#b837c4', dark: '#82228c', transfers: [] },
+    { id: 'JN26', num: '26', name: '立川',       en: 'Tachikawa',           short: '立川',     hub: true,  dist: 0,   time: 0,  bg: '#c934ab', dark: '#8f2179', transfers: ['中央線', '青梅線', '多摩モノレール'] },
   ];
+
+  // 本線の駅数（STATIONS[0..BASE_STATION_COUNT-1] が自動で直線接続される）
+  const BASE_STATION_COUNT = STATIONS.length;
+
+  /**
+   * 支線・延長線などの追加隣接エッジ定義（'駅ID-駅ID': { dist, time } 形式）
+   */
+  const EXTRA_SEGMENT_LEGS = {};
+
+  /**
+   * 駅固有IDベースの車窓景観定義（駅停車時 ＋ 駅間タイムライン）
+   * 本ゲームの車窓は車両上部1面の横スクロール表示のため、各景観は単一モードIDで記述する。
+   * - stations: 駅固有IDごとの停車時景観（'city' | 'tower' | 'residential80' | 'mixed50' | 'bridge'）
+   * - segments: 隣接2駅の固有IDペア 'fromId>toId'（下り基準で片方向のみ記述。上り走行時は 1-localT で自動反転）
+   *             単一文字列 / 累積比率 [{ to, mode }] / 相対重み [{ ratio, mode }] / 実距離 [{ km, mode }] に対応
+   */
+  const SCENERY_CONFIG = {
+    defaultMode: 'city',
+    stationBaseDir: 'down',
+    stations: {
+      JN01: 'city',          // 川崎
+      JN02: 'residential80', // 尻手
+      JN03: 'city',          // 矢向
+      JN04: 'city',          // 鹿島田
+      JN05: 'residential80', // 平間
+      JN06: 'tower',         // 向河原
+      JN07: 'tower',         // 武蔵小杉
+      JN08: 'city',          // 武蔵中原
+      JN09: 'city',          // 武蔵新城
+      JN10: 'city',          // 武蔵溝ノ口
+      JN11: 'residential80', // 津田山
+      JN12: 'residential80', // 久地
+      JN13: 'residential80', // 宿河原
+      JN14: 'residential80', // 登戸
+      JN15: 'residential80', // 中野島
+      JN16: 'residential80', // 稲田堤
+      JN17: 'mixed50',       // 矢野口
+      JN18: 'mixed50',       // 稲城長沼
+      JN19: 'mixed50',       // 南多摩
+      JN20: 'residential80', // 府中本町
+      JN21: 'residential80', // 分倍河原
+      JN22: 'residential80', // 西府
+      JN23: 'residential80', // 谷保
+      JN24: 'residential80', // 矢川
+      JN25: 'residential80', // 西国立
+      JN26: 'city',          // 立川
+    },
+    segments: {
+      'JN01>JN02': 'city',          // 川崎〜尻手
+      'JN02>JN03': 'residential80', // 尻手〜矢向
+      'JN03>JN04': 'city',          // 矢向〜鹿島田
+      'JN04>JN05': 'city',          // 鹿島田〜平間
+      'JN05>JN06': 'residential80', // 平間〜向河原
+      'JN06>JN07': 'tower',         // 向河原〜武蔵小杉
+      'JN07>JN08': 'tower',         // 武蔵小杉〜武蔵中原
+      'JN08>JN09': 'city',          // 武蔵中原〜武蔵新城
+      'JN09>JN10': 'city',          // 武蔵新城〜武蔵溝ノ口
+      'JN10>JN11': 'residential80', // 武蔵溝ノ口〜津田山
+      'JN11>JN12': 'residential80', // 津田山〜久地
+      'JN12>JN13': 'residential80', // 久地〜宿河原
+      'JN13>JN14': 'residential80', // 宿河原〜登戸
+      'JN14>JN15': 'residential80', // 登戸〜中野島
+      'JN15>JN16': 'residential80', // 中野島〜稲田堤
+      'JN16>JN17': [                // 稲田堤〜矢野口（中間点で住宅地8割→混在5割へ切替）
+        { to: 0.5, mode: 'residential80' },
+        { to: 1.0, mode: 'mixed50' },
+      ],
+      'JN17>JN18': 'mixed50',       // 矢野口〜稲城長沼
+      'JN18>JN19': 'mixed50',       // 稲城長沼〜南多摩
+      'JN19>JN20': 'bridge',        // 南多摩〜府中本町（多摩川橋梁）
+      'JN20>JN21': 'residential80', // 府中本町〜分倍河原
+      'JN21>JN22': 'residential80', // 分倍河原〜西府
+      'JN22>JN23': 'residential80', // 西府〜谷保
+      'JN23>JN24': 'residential80', // 谷保〜矢川
+      'JN24>JN25': 'residential80', // 矢川〜西国立
+      'JN25>JN26': 'city',          // 西国立〜立川
+    },
+  };
 
   /**
    * 第13回大都市交通センサス（2021年12月調査・IC定期外）
@@ -211,6 +290,32 @@
   };
 
   /**
+   * シナリオ別の駅ごと期待乗車倍率定義（キー: `${dirKey}:${courseKey}`, 値: { [stationIdx]: 倍率 }）
+   * computeDirectionStats() の計算と buildDataTable() の表記の両方で単一ソースとして参照する。
+   */
+  const SCENARIO_BOARD_MULTS = {
+    'up:tachikawa_nakahara': {
+      25: 2.2,
+      23: 0.7, 22: 0.7, 21: 0.7,
+      18: 0.3, 17: 0.3, 16: 0.3, 14: 0.3, 12: 0.3, 11: 0.3, 10: 0.3,
+      8: 0.25,
+    },
+    'up:nishikunitachi': {
+      24: 10,
+      23: 2.5, 22: 2.5, 21: 2.5, 20: 2.5, 19: 2.5, 18: 2.5, 17: 2.5, 16: 2.5, 15: 2.5, 14: 2.5,
+      13: 1.2, 12: 1.2, 11: 1.2,
+      10: 1.4,
+      6: 1.5, 5: 1.5, 4: 1.5, 3: 1.5, 2: 1.5, 1: 1.5,
+    },
+    'up:rapid': {
+      25: 1.5,
+    },
+    'up:full': {
+      25: 1.5,
+    },
+  };
+
+  /**
    * 方式A：特定列車・発駅における最低保証乗客ルール（固定枠）
    * キー: `${dirKey}:${courseKey}`
    */
@@ -310,6 +415,9 @@
     SHARE_HASHTAG,
     BOARD_CONFIG,
     STATIONS,
+    BASE_STATION_COUNT,
+    EXTRA_SEGMENT_LEGS,
+    SCENERY_CONFIG,
     OD_MATRIX_13,
     DIRECTIONS,
     OD_MODES,
@@ -320,6 +428,7 @@
     RAPID_SEGMENT_TIMES,
     RAPID_CONNECTIONS,
     G1_CONFIG,
+    SCENARIO_BOARD_MULTS,
     GUARANTEED_PASSENGERS,
     JIZO_CELLS,
     PRIORITY_SPACES,

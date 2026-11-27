@@ -18,6 +18,7 @@
     RAPID_SEGMENT_TIMES,
     RAPID_CONNECTIONS,
     G1_CONFIG,
+    SCENARIO_BOARD_MULTS,
     GUARANTEED_PASSENGERS,
     JIZO_CELLS,
     PRIORITY_SPACES,
@@ -28,7 +29,6 @@
   } = global.NanbuData;
   const { ROWS, COLS, MAX_CAPACITY, PEAK_TARGET, DOOR_CELLS } = BOARD_CONFIG;
   const STATION_COUNT = STATIONS.length;
-  const STATS_STATION_COUNT = STATIONS.length;
   const RAPID_STOP_SET = new Set(RAPID_STOPS);
   const VALID_TRAIN_SET = new Set(Array.isArray(TRAIN_ORDER) ? TRAIN_ORDER : []);
 
@@ -554,29 +554,16 @@
     const peakRaw = Math.max(1, ...rawSection);
     const transBoard = rawBoard.map((v) => (v > 0 ? Math.pow(v, gamma) : 0));
 
-    // シナリオ固有の期待乗車倍率をピーク正規化より前に適用し、倍率後の断面負荷で peakTarget へ正規化する
-    if (courseKey === 'tachikawa_nakahara' && !isDown) {
-      // 終電間際（立川発 武蔵中原行）
-      transBoard[25] *= 2.2;                           // 立川 2.2倍
-      [23, 22, 21].forEach((i) => { transBoard[i] *= 0.7; });              // 矢川・谷保・西府 0.7倍
-      [18, 17, 16, 14, 12, 11, 10].forEach((i) => { transBoard[i] *= 0.3; }); // 南多摩〜矢野口・中野島・宿河原〜津田山 0.3倍
-      transBoard[8] *= 0.25;                           // 新城 0.25倍
-    } else if (courseKey === 'nishikunitachi' && !isDown) {
-      // 朝ラッシュ（西国立発 川崎行）：西国立10倍・矢川〜中野島2.5倍・登戸〜久地1.2倍・津田山1.4倍・武蔵小杉〜尻手1.5倍
-      transBoard[24] *= 10;
-      for (let i = 23; i >= 14; i--) {
-        transBoard[i] *= 2.5;
-      }
-      for (let i = 13; i >= 11; i--) {
-        transBoard[i] *= 1.2;
-      }
-      transBoard[10] *= 1.4;
-      for (let i = 6; i >= 1; i--) {
-        transBoard[i] *= 1.5;
-      }
-    } else if (!isDown && (courseKey === 'rapid' || courseKey === 'full')) {
-      // 立川発 快速 川崎行 / 立川発 川崎行：立川 1.5倍
-      transBoard[25] *= 1.5;
+    // シナリオ固有の期待乗車倍率（SCENARIO_BOARD_MULTS）をピーク正規化より前に適用し、倍率後の断面負荷で peakTarget へ正規化する
+    const scenarioMults =
+      SCENARIO_BOARD_MULTS && SCENARIO_BOARD_MULTS[`${isDown ? 'down' : 'up'}:${courseKey}`];
+    if (scenarioMults) {
+      Object.entries(scenarioMults).forEach(([idxStr, mult]) => {
+        const idx = Number(idxStr);
+        if (Number.isInteger(idx) && idx >= 0 && idx < STATION_COUNT && Number.isFinite(mult)) {
+          transBoard[idx] *= mult;
+        }
+      });
     }
 
     const transSection = Array(STATION_COUNT - 1).fill(0);
@@ -690,7 +677,7 @@
    * - Stage 2: 乗客ごとに有効OD行列（快速時は緩急接続反映済み）から着駅を重み付き抽選
    * - 最大乗車数が40マス以内に収まる試行を採用し、理不尽なランダム積み残しを防止
    */
-  function generateRunSchedule(courseKey, dirKey, odModeKey, diffKey, allocateUid, options = {}) {
+  function generateRunSchedule(courseKey, dirKey, odModeKey, allocateUid, options = {}) {
     const dir = DIRECTIONS[dirKey] || DIRECTIONS.down;
     const isDown = dir.step > 0;
     const isRapid = isRapidCourse(courseKey);
@@ -1128,8 +1115,8 @@
     return {
       totalRuns: 0,
       totalCarried: 0,
-      stationBoarded: Array(STATS_STATION_COUNT).fill(0),
-      stationAlighted: Array(STATS_STATION_COUNT).fill(0),
+      stationBoarded: Array(STATION_COUNT).fill(0),
+      stationAlighted: Array(STATION_COUNT).fill(0),
     };
   }
 
@@ -1142,13 +1129,13 @@
     stats.totalCarried = Number.isFinite(carriedNum) && carriedNum >= 0 ? Math.round(carriedNum) : 0;
 
     if (Array.isArray(rawStats.stationBoarded)) {
-      for (let i = 0; i < STATS_STATION_COUNT; i++) {
+      for (let i = 0; i < STATION_COUNT; i++) {
         const v = Number(rawStats.stationBoarded[i]);
         stats.stationBoarded[i] = Number.isFinite(v) && v >= 0 ? Math.round(v) : 0;
       }
     }
     if (Array.isArray(rawStats.stationAlighted)) {
-      for (let i = 0; i < STATS_STATION_COUNT; i++) {
+      for (let i = 0; i < STATION_COUNT; i++) {
         const v = Number(rawStats.stationAlighted[i]);
         stats.stationAlighted[i] = Number.isFinite(v) && v >= 0 ? Math.round(v) : 0;
       }
@@ -1169,13 +1156,31 @@
     if (!Number.isFinite(scoreNum)) return null;
     const score = Math.round(scoreNum);
 
-    const hasRawRank = typeof raw.rank === 'string' && raw.rank.trim() !== '';
-    const rankStr = hasRawRank ? raw.rank.trim().toUpperCase() : 'C';
-    if (hasRawRank && !VALID_RANK_SET.has(rankStr)) return null;
-    const rank = VALID_RANK_SET.has(rankStr) ? rankStr : 'C';
+    const delayNum = parseNonNegativeNumber(raw.delaySec);
+    const delaySec = Number.isFinite(delayNum) ? Math.round(delayNum) : 0;
 
-    const diffRaw = typeof raw.diffKey === 'string' ? raw.diffKey.trim() : 'normal';
-    const diffKey = DIFFICULTIES[diffRaw] ? diffRaw : 'normal';
+    const smoothNum = parseNonNegativeNumber(raw.smoothRate);
+    const smoothRate = Number.isFinite(smoothNum)
+      ? Math.max(0, Math.min(100, Math.round(smoothNum)))
+      : 100;
+
+    const hasRawRank = typeof raw.rank === 'string' && raw.rank.trim() !== '';
+    let rank;
+    if (hasRawRank) {
+      const rankStr = raw.rank.trim().toUpperCase();
+      if (!VALID_RANK_SET.has(rankStr)) return null;
+      rank = rankStr;
+    } else {
+      rank = evaluateClearRank(delaySec, smoothRate).rank;
+    }
+
+    const hasRawDiff = typeof raw.diffKey === 'string' && raw.diffKey.trim() !== '';
+    let diffKey = 'normal';
+    if (hasRawDiff) {
+      const diffRaw = raw.diffKey.trim();
+      if (!DIFFICULTIES[diffRaw]) return null;
+      diffKey = diffRaw;
+    }
 
     let modsArr = [];
     if (Array.isArray(raw.mods)) {
@@ -1187,14 +1192,6 @@
       modsArr.map((m) => String(m || '').trim()).filter((m) => VALID_MOD_ORDER.includes(m))
     );
     const mods = VALID_MOD_ORDER.filter((m) => modSet.has(m));
-
-    const delayNum = parseNonNegativeNumber(raw.delaySec);
-    const delaySec = Number.isFinite(delayNum) ? Math.round(delayNum) : 0;
-
-    const smoothNum = parseNonNegativeNumber(raw.smoothRate);
-    const smoothRate = Number.isFinite(smoothNum)
-      ? Math.max(0, Math.min(100, Math.round(smoothNum)))
-      : 100;
 
     let achievedAt = '';
     if (typeof raw.achievedAt === 'string' && raw.achievedAt.trim()) {
@@ -1317,19 +1314,19 @@
     store.overall = nextOverall;
     store.byCourse[rec.courseKey] = nextCourseList;
 
-    // 完走時の累計輸送人数・全26駅乗降統計を加算
+    // 完走時の累計輸送人数・全26駅乗降統計を加算（ドア前地蔵も乗客として含める）
     const stats = sanitizeStats(store.stats);
     stats.totalRuns += 1;
     let carriedThisRun = 0;
     if (Array.isArray(passengerLog)) {
       for (const item of passengerLog) {
-        if (!item || item.isJizo) continue;
+        if (!item) continue;
         const fromIdx = Number(item.fromIdx);
         const toIdx = Number(item.toIdx);
-        if (Number.isInteger(fromIdx) && fromIdx >= 0 && fromIdx < STATS_STATION_COUNT) {
+        if (Number.isInteger(fromIdx) && fromIdx >= 0 && fromIdx < STATION_COUNT) {
           stats.stationBoarded[fromIdx] += 1;
         }
-        if (Number.isInteger(toIdx) && toIdx >= 0 && toIdx < STATS_STATION_COUNT) {
+        if (Number.isInteger(toIdx) && toIdx >= 0 && toIdx < STATION_COUNT) {
           stats.stationAlighted[toIdx] += 1;
         }
         carriedThisRun += 1;
@@ -1351,8 +1348,8 @@
       record: rec,
       overallRank,
       courseRank,
-      isNewOverallBest: overallRank === 1 && rec.score >= prevOverallBest,
-      isNewCourseBest: courseRank === 1 && rec.score >= prevCourseBest,
+      isNewOverallBest: overallRank === 1 && (prevOverallBest < 0 || rec.score > prevOverallBest),
+      isNewCourseBest: courseRank === 1 && (prevCourseBest < 0 || rec.score > prevCourseBest),
     };
   }
 
@@ -1426,7 +1423,7 @@
         .map(escapeCsvField)
         .join(',')
     );
-    for (let i = 0; i < STATS_STATION_COUNT; i++) {
+    for (let i = 0; i < STATION_COUNT; i++) {
       const st = STATIONS[i];
       const stName = st ? `${st.num} ${st.name}` : `駅${i}`;
       lines.push(
@@ -1497,7 +1494,14 @@
   function importHighScoresFromCsv(csvText) {
     const rows = parseCsvRows(csvText);
     if (rows.length < 1) {
-      return { ok: false, error: 'CSVが空です', importedCount: 0, skippedCount: 0, store: loadHighScores() };
+      return {
+        ok: false,
+        error: 'CSVが空です',
+        importedScoreCount: 0,
+        importedStatsCount: 0,
+        skippedCount: 0,
+        store: loadHighScores(),
+      };
     }
 
     const header = rows[0].map((h) => h.trim());
@@ -1507,7 +1511,8 @@
       return {
         ok: false,
         error: 'CSVのヘッダ形式が不正です（courseKey / score 列が必要）',
-        importedCount: 0,
+        importedScoreCount: 0,
+        importedStatsCount: 0,
         skippedCount: 0,
         store: loadHighScores(),
       };
@@ -1540,12 +1545,13 @@
       if (scope === 'stats_total') {
         const carriedNum = parseNonNegativeNumber(cols[idxScore]);
         const runsNum = idxDelay >= 0 ? parseNonNegativeNumber(cols[idxDelay]) : 0;
-        if (Number.isFinite(carriedNum)) {
+        const runsValid = idxDelay < 0 || Number.isFinite(runsNum);
+        if (Number.isFinite(carriedNum) && runsValid) {
           mergedStats.totalCarried = Math.max(mergedStats.totalCarried, Math.round(carriedNum));
-          if (Number.isFinite(runsNum)) {
+          if (idxDelay >= 0) {
             mergedStats.totalRuns = Math.max(mergedStats.totalRuns, Math.round(runsNum));
           }
-          if (carriedNum > 0 || (Number.isFinite(runsNum) && runsNum > 0)) {
+          if (carriedNum > 0 || (idxDelay >= 0 && runsNum > 0)) {
             importedStatsCount++;
           }
         } else {
@@ -1558,23 +1564,25 @@
         const stIdx = parseNonNegativeNumber(cols[idxCourseKey]);
         const boardedNum = parseNonNegativeNumber(cols[idxScore]);
         const alightedNum = idxDelay >= 0 ? parseNonNegativeNumber(cols[idxDelay]) : 0;
+        const alightedValid = idxDelay < 0 || Number.isFinite(alightedNum);
         if (
           Number.isInteger(stIdx) &&
           stIdx >= 0 &&
-          stIdx < STATS_STATION_COUNT &&
-          Number.isFinite(boardedNum)
+          stIdx < STATION_COUNT &&
+          Number.isFinite(boardedNum) &&
+          alightedValid
         ) {
           mergedStats.stationBoarded[stIdx] = Math.max(
             mergedStats.stationBoarded[stIdx],
             Math.round(boardedNum)
           );
-          if (Number.isFinite(alightedNum)) {
+          if (idxDelay >= 0) {
             mergedStats.stationAlighted[stIdx] = Math.max(
               mergedStats.stationAlighted[stIdx],
               Math.round(alightedNum)
             );
           }
-          if (boardedNum > 0 || (Number.isFinite(alightedNum) && alightedNum > 0)) {
+          if (boardedNum > 0 || (idxDelay >= 0 && alightedNum > 0)) {
             importedStatsCount++;
           }
         } else {
@@ -1586,8 +1594,8 @@
       const rec = normalizeScoreRecord({
         courseKey: cols[idxCourseKey],
         score: cols[idxScore],
-        rank: idxRank >= 0 ? cols[idxRank] : 'C',
-        diffKey: idxDiff >= 0 ? cols[idxDiff] : 'normal',
+        rank: idxRank >= 0 ? cols[idxRank] : '',
+        diffKey: idxDiff >= 0 ? cols[idxDiff] : '',
         mods: idxMods >= 0 ? cols[idxMods] : '',
         delaySec: idxDelay >= 0 ? cols[idxDelay] : 0,
         smoothRate: idxSmooth >= 0 ? cols[idxSmooth] : 100,
@@ -1615,7 +1623,6 @@
       return {
         ok: false,
         error: '取り込み可能なスコアデータが見つかりませんでした',
-        importedCount: 0,
         importedScoreCount: 0,
         importedStatsCount: 0,
         skippedCount,
@@ -1639,7 +1646,6 @@
     const saved = saveHighScores(merged);
     return {
       ok: true,
-      importedCount: importedScoreCount,
       importedScoreCount,
       importedStatsCount,
       skippedCount,
